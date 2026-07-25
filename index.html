@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Arcade Fighter Prototype - Stickman Edition</title>
+    <title>Arcade Fighter Prototype - Expanded Mechanics</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -39,7 +39,7 @@
 
         /* Action Buttons (Right) */
         #action-buttons {
-            position: relative; width: 200px; height: 200px;
+            position: relative; width: 220px; height: 200px;
             margin-bottom: 20px; margin-right: 20px;
         }
         .action-btn {
@@ -50,6 +50,7 @@
         }
         .action-btn:active { background: rgba(255, 255, 255, 0.6) !important; color: black; }
         
+        #btn-pj { top: 0; left: 150px; background: rgba(0, 255, 255, 0.5); font-size: 14px; }
         #btn-y { top: 0; left: 75px; background: rgba(255, 200, 0, 0.5); }
         #btn-x { top: 65px; left: 10px; background: rgba(50, 50, 255, 0.5); }
         #btn-b { top: 65px; left: 140px; background: rgba(255, 50, 50, 0.5); }
@@ -92,6 +93,7 @@
             </div>
         </div>
         <div id="action-buttons" class="control-group">
+            <div class="action-btn" id="btn-pj" data-key="pj">PJ</div>
             <div class="action-btn" id="btn-y" data-key="y">Y</div>
             <div class="action-btn" id="btn-x" data-key="x">X</div>
             <div class="action-btn" id="btn-b" data-key="b">B</div>
@@ -108,8 +110,37 @@ const GRAVITY = 0.8;
 const GROUND_Y = 650;
 const FPS = 60;
 
-const input = { a: false, b: false, x: false, y: false, special: false };
+const input = { a: false, b: false, x: false, y: false, special: false, pj: false };
 const joystick = { x: 0, y: 0, active: false };
+
+// Visual Effects & Projectiles Stores
+const hitEffects = [];
+const projectiles = [];
+
+function spawnHitEffect(x, y) {
+    hitEffects.push({ x: x, y: y, life: FPS, maxLife: FPS });
+}
+
+class Projectile {
+    constructor(x, y, dir, ownerId) {
+        this.x = x;
+        this.y = y;
+        this.vx = dir * 12;
+        this.ownerId = ownerId;
+        this.active = true;
+        this.radius = 10;
+    }
+    update() {
+        this.x += this.vx;
+        if (this.x < 0 || this.x > canvas.width) this.active = false;
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#00ffff';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+        ctx.fill();
+    }
+}
 
 const joyZone = document.getElementById('joystick-zone');
 const joyStick = document.getElementById('joy-stick');
@@ -169,6 +200,7 @@ window.addEventListener('keydown', (e) => {
         case 'k': input.b = true; break;
         case 'u': input.x = true; break;
         case 'i': input.y = true; break;
+        case 'o': input.pj = true; break;
         case ' ': input.special = true; break;
         case 'w': joystick.y = -1; break;
         case 's': joystick.y = 1; break;
@@ -182,6 +214,7 @@ window.addEventListener('keyup', (e) => {
         case 'k': input.b = false; break;
         case 'u': input.x = false; break;
         case 'i': input.y = false; break;
+        case 'o': input.pj = false; break;
         case ' ': input.special = false; break;
         case 'w': case 's': joystick.y = 0; break;
         case 'a': case 'd': joystick.x = 0; break;
@@ -191,7 +224,6 @@ window.addEventListener('keyup', (e) => {
 function lerp(start, end, amt) { return (1 - amt) * start + amt * end; }
 function toRad(deg) { return deg * Math.PI / 180; }
 
-// Authentic Stickman Stance (Guarding, bent knees, lean forward)
 const DEFAULT_POSE = {
     lShoulder: -80, lElbow: -70,
     rShoulder: -30, rElbow: -90,
@@ -213,7 +245,6 @@ class HumanoidFighter {
         this.color = color;
         this.facingRight = (id === 'P1');
         
-        // Stickman proportions
         this.sizes = {
             head: 15, trunkH: 60,
             upperArm: 35, lowerArm: 35, 
@@ -227,8 +258,11 @@ class HumanoidFighter {
         this.state = 'idle';
         this.stateTimer = 0;
         this.hasHit = false; 
+        
         this.spCooldown = 0;
         this.spMaxCooldown = FPS * 5; 
+        this.pjCooldown = 0;
+        this.pjMaxCooldown = Math.floor(FPS * 1.5); 
         
         this.limbs = { lHand: {x:0,y:0}, rHand: {x:0,y:0}, lFoot: {x:0,y:0}, rFoot: {x:0,y:0} };
         this.bodyBox = { x: 0, y: 0, w: 0, h: 0 };
@@ -241,8 +275,6 @@ class HumanoidFighter {
                 this.vy = -6; 
                 this.vx = this.facingRight ? -4 : 4; 
             }
-            
-            // Lying flat on ground pose
             this.targetPose = {
                 lShoulder: 160, lElbow: 0,
                 rShoulder: 180, rElbow: 0,
@@ -250,7 +282,6 @@ class HumanoidFighter {
                 rHip: 70, rKnee: 0,
                 trunkTilt: 90 
             };
-            
             this.globalRotation = 0;
             this.vy += GRAVITY;
             this.x += this.vx;
@@ -269,26 +300,35 @@ class HumanoidFighter {
         }
 
         if (this.spCooldown > 0) this.spCooldown--;
+        if (this.pjCooldown > 0) this.pjCooldown--;
 
         let jx = 0;
         let jy = 0;
+        let grabInput = false;
+        let pjInput = false;
 
-        // Player vs Independent AI logic
         if (!this.isAI) {
             jx = joystick.x;
             jy = joystick.y;
+            grabInput = (input.a && input.b) || (input.x && input.y);
+            pjInput = input.pj;
         } else if (this.state !== 'spin') {
             let dist = opponent.x - this.x;
             if (Math.abs(dist) > 65) {
-                jx = dist > 0 ? 0.5 : -0.5; // Walk towards player
+                jx = dist > 0 ? 0.5 : -0.5;
             } else {
                 jx = 0;
                 if (Math.random() < 0.04 && !this.isAttacking()) {
                     const attacks = ['punchA', 'punchB', 'kickX', 'kickY'];
                     this.startAttack(attacks[Math.floor(Math.random() * attacks.length)], 25);
                 }
+                if (Math.random() < 0.015 && dist < 50 && !this.isAttacking()) {
+                    grabInput = true;
+                }
             }
-            // Decoupled Jump Logic
+            if (Math.random() < 0.01 && dist > 150 && this.pjCooldown === 0 && !this.isAttacking()) {
+                pjInput = true;
+            }
             if (Math.random() < 0.015 && this.y === GROUND_Y) {
                 jy = -1; 
                 jx = dist > 0 ? 0.6 : -0.6; 
@@ -301,8 +341,10 @@ class HumanoidFighter {
         }
 
         if (this.state === 'idle' || this.state === 'walk' || (this.y < GROUND_Y && !this.isAttacking())) {
+            
+            // Apply 20% slower walking pace (4.8 instead of 6)
             if (Math.abs(jx) > 0.1 && this.y === GROUND_Y) {
-                this.vx = jx * 6;
+                this.vx = jx * 4.8; 
                 this.state = 'walk';
             } else if (this.y === GROUND_Y) {
                 this.vx = 0;
@@ -315,7 +357,13 @@ class HumanoidFighter {
                 this.y -= 1;
             }
 
-            if (!this.isAI) {
+            if (grabInput && !this.isAttacking()) {
+                this.startAttack('grab', 20);
+            } else if (pjInput && this.pjCooldown === 0 && !this.isAttacking()) {
+                this.startAttack('throwPj', 15);
+                projectiles.push(new Projectile(this.x + (this.facingRight ? 40 : -40), this.y - 70, this.facingRight ? 1 : -1, this.id));
+                this.pjCooldown = this.pjMaxCooldown;
+            } else if (!this.isAI && !this.isAttacking()) {
                 if (input.special && this.spCooldown === 0) {
                     this.state = 'spin';
                     this.stateTimer = FPS * 3; 
@@ -386,7 +434,7 @@ class HumanoidFighter {
     }
 
     isAttacking() {
-        return ['punchA', 'punchB', 'kickX', 'kickY'].includes(this.state);
+        return ['punchA', 'punchB', 'kickX', 'kickY', 'grab', 'throw', 'throwPj'].includes(this.state);
     }
 
     updatePoses(jx) {
@@ -420,19 +468,46 @@ class HumanoidFighter {
                 this.targetPose.lShoulder = 120;
                 this.targetPose.trunkTilt = 30;
             }
-        } else if (this.state === 'kickX') {
-            this.targetPose.lHip = -90; this.targetPose.lKnee = 0;
-            this.targetPose.rHip = 10; this.targetPose.rKnee = 20;
-            this.targetPose.trunkTilt = -10;
-        } else if (this.state === 'kickY') {
-            let progress = this.stateTimer / 35;
-            if (progress > 0.6) { 
-                this.targetPose.rHip = -90; this.targetPose.rKnee = 120;
-                this.targetPose.trunkTilt = 0;
-            } else { 
-                this.targetPose.rHip = -120; this.targetPose.rKnee = 0;
-                this.targetPose.trunkTilt = -30;
+        } else if (this.state === 'kickX' || this.state === 'kickY') {
+            if (this.y < GROUND_Y) {
+                // Sweep leg from 0 to 90 degrees when jumping and kicking
+                let progress = this.stateTimer / (this.state === 'kickX' ? 20 : 35); 
+                let sweepAngle = lerp(-90, 0, progress); // from 0 down to -90 forward
+                this.targetPose.lHip = sweepAngle;
+                this.targetPose.lKnee = 0;
+                this.targetPose.rHip = sweepAngle + 20; 
+                this.targetPose.rKnee = 30;
+                this.targetPose.trunkTilt = 10;
+            } else {
+                if (this.state === 'kickX') {
+                    this.targetPose.lHip = -90; this.targetPose.lKnee = 0;
+                    this.targetPose.rHip = 10; this.targetPose.rKnee = 20;
+                    this.targetPose.trunkTilt = -10;
+                } else {
+                    let progress = this.stateTimer / 35;
+                    if (progress > 0.6) { 
+                        this.targetPose.rHip = -90; this.targetPose.rKnee = 120;
+                        this.targetPose.trunkTilt = 0;
+                    } else { 
+                        this.targetPose.rHip = -120; this.targetPose.rKnee = 0;
+                        this.targetPose.trunkTilt = -30;
+                    }
+                }
             }
+        } else if (this.state === 'grab') {
+            // Reach both arms to grab
+            this.targetPose.lShoulder = -90; this.targetPose.lElbow = 0;
+            this.targetPose.rShoulder = -90; this.targetPose.rElbow = 0;
+            this.targetPose.trunkTilt = 15;
+        } else if (this.state === 'throw') {
+            // Throw animation
+            this.targetPose.lShoulder = -160; this.targetPose.lElbow = -20;
+            this.targetPose.rShoulder = -160; this.targetPose.rElbow = -20;
+            this.targetPose.trunkTilt = -30;
+        } else if (this.state === 'throwPj') {
+            this.targetPose.lShoulder = -90; this.targetPose.lElbow = 0;
+            this.targetPose.rShoulder = 0; this.targetPose.rElbow = -90;
+            this.targetPose.trunkTilt = 10;
         } else if (this.state === 'spin') {
             this.targetPose.lShoulder = -90; this.targetPose.rShoulder = -90;
             this.targetPose.lElbow = 0; this.targetPose.rElbow = 0;
@@ -451,6 +526,7 @@ class HumanoidFighter {
         else if (this.state === 'punchB') { strikePoint = this.limbs.rHand; damage = 15; }
         else if (this.state === 'kickX') { strikePoint = this.limbs.lFoot; damage = 8; }
         else if (this.state === 'kickY') { strikePoint = this.limbs.rFoot; damage = 20; }
+        else if (this.state === 'grab') { strikePoint = this.limbs.lHand; damage = 0; }
         else if (this.state === 'spin') { 
             if (this.stateTimer % 15 === 0) this.hasHit = false; 
             strikePoint = this.limbs.lHand; 
@@ -462,12 +538,25 @@ class HumanoidFighter {
             if (strikePoint.x > ob.x && strikePoint.x < ob.x + ob.w &&
                 strikePoint.y > ob.y && strikePoint.y < ob.y + ob.h) {
                 
-                opponent.takeDamage(damage);
-                this.hasHit = true;
-
-                let dir = (strikePoint.x > opponent.x) ? -1 : 1;
-                opponent.vx = dir * (damage * 0.5);
-                opponent.vy = -3;
+                if (this.state === 'grab') {
+                    // Transition to throw state on successful grab contact
+                    this.state = 'throw';
+                    this.stateTimer = 20;
+                    this.hasHit = true;
+                    
+                    let dir = this.facingRight ? 1 : -1;
+                    opponent.takeDamage(12);
+                    opponent.vx = dir * 16;
+                    opponent.vy = -10;
+                    spawnHitEffect(strikePoint.x, strikePoint.y);
+                } else {
+                    opponent.takeDamage(damage);
+                    this.hasHit = true;
+                    let dir = (strikePoint.x > opponent.x) ? -1 : 1;
+                    opponent.vx = dir * (damage * 0.5);
+                    opponent.vy = -3;
+                    spawnHitEffect(strikePoint.x, strikePoint.y);
+                }
             }
         }
     }
@@ -497,7 +586,6 @@ class HumanoidFighter {
     draw(ctx) {
         ctx.save();
         
-        // Calculate procedural drop-to-floor offset for ragdoll
         let targetPelvisY = this.y - this.sizes.upperLeg - this.sizes.lowerLeg + 15;
         if (this.state === 'dead') targetPelvisY = this.y - 10;
         this.pelvisY = lerp(this.pelvisY || targetPelvisY, targetPelvisY, 0.2);
@@ -517,45 +605,38 @@ class HumanoidFighter {
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         
-        // Neck offset calculated from rotated trunk
         let neckX = Math.sin(toRad(this.pose.trunkTilt * dir)) * this.sizes.trunkH;
         let neckY = -Math.cos(toRad(this.pose.trunkTilt * dir)) * this.sizes.trunkH;
 
-        // Draw Back Arm
         ctx.save();
         ctx.translate(neckX, neckY);
         ctx.strokeStyle = '#999'; ctx.lineWidth = stickWidth;
         this.drawLimbSegment(ctx, this.sizes.upperArm, this.sizes.lowerArm, this.pose.rShoulder, this.pose.rElbow, 'rHand', dir);
         ctx.restore();
 
-        // Draw Back Leg
         ctx.save();
         ctx.strokeStyle = '#999'; ctx.lineWidth = stickWidth;
         this.drawLimbSegment(ctx, this.sizes.upperLeg, this.sizes.lowerLeg, this.pose.rHip, this.pose.rKnee, 'rFoot', dir);
         ctx.restore();
 
-        // Draw Trunk
         ctx.save();
         ctx.rotate(toRad(this.pose.trunkTilt * dir));
         ctx.strokeStyle = color; ctx.lineWidth = stickWidth + 1;
         ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -this.sizes.trunkH); ctx.stroke();
 
-        // Inside Trunk context: Draw Head at neck position
         ctx.translate(0, -this.sizes.trunkH);
         ctx.fillStyle = color;
         ctx.beginPath(); ctx.arc(0, -this.sizes.head, this.sizes.head, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'white'; // Eye
+        ctx.fillStyle = 'white';
         ctx.beginPath(); ctx.arc(dir * 6, -this.sizes.head - 3, 3, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
 
-        // Draw Front Arm
         ctx.save();
         ctx.translate(neckX, neckY);
         ctx.strokeStyle = color; ctx.lineWidth = stickWidth;
         this.drawLimbSegment(ctx, this.sizes.upperArm, this.sizes.lowerArm, this.pose.lShoulder, this.pose.lElbow, 'lHand', dir);
         ctx.restore();
 
-        // Draw Front Leg
         ctx.save();
         ctx.strokeStyle = color; ctx.lineWidth = stickWidth;
         this.drawLimbSegment(ctx, this.sizes.upperLeg, this.sizes.lowerLeg, this.pose.lHip, this.pose.lKnee, 'lFoot', dir);
@@ -587,6 +668,45 @@ function animate() {
     
     p2.draw(ctx);
     p1.draw(ctx);
+
+    // Process Projectiles
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        let p = projectiles[i];
+        p.update();
+        p.draw(ctx);
+        
+        let target = (p.ownerId === 'P1') ? p2 : p1;
+        if (p.active && target.hp > 0) {
+            let ob = target.bodyBox;
+            if (p.x > ob.x && p.x < ob.x + ob.w && p.y > ob.y && p.y < ob.y + ob.h) {
+                target.takeDamage(10);
+                target.vx = p.vx * 0.5;
+                target.vy = -5;
+                spawnHitEffect(p.x, p.y);
+                p.active = false;
+            }
+        }
+        if (!p.active) projectiles.splice(i, 1);
+    }
+
+    // Process Hit Effects
+    for (let i = hitEffects.length - 1; i >= 0; i--) {
+        let e = hitEffects[i];
+        e.life--;
+        if (e.life <= 0) {
+            hitEffects.splice(i, 1);
+            continue;
+        }
+        let progress = e.life / e.maxLife; // Fades from 1 to 0 over 1 second
+        
+        ctx.save();
+        ctx.globalAlpha = progress;
+        ctx.fillStyle = '#ff8800'; // Orange
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, 10 + (1 - progress) * 35, 0, Math.PI * 2); // Expanding circle
+        ctx.fill();
+        ctx.restore();
+    }
 
     if (p1.hp <= 0 || p2.hp <= 0) {
         ctx.fillStyle = 'white';
