@@ -3,128 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Arcade Fighter Prototype</title>
+    <title>Arcade Fighter Prototype - Joystick & Limbs</title>
     <style>
         body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background-color: #222;
-            overflow: hidden;
-            touch-action: none; /* Prevent scrolling on mobile */
-            font-family: sans-serif;
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #222; overflow: hidden;
+            touch-action: none; font-family: sans-serif;
         }
-
         #gameCanvas {
-            width: 100vw;
-            height: 100vh;
-            display: block;
+            width: 100vw; height: 100vh; display: block;
         }
-
-        /* UI Overlay */
         #ui-layer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none; /* Let clicks pass through to canvas if needed */
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-            padding: 20px;
-            box-sizing: border-box;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: flex; justify-content: space-between;
+            align-items: flex-end; padding: 20px; box-sizing: border-box;
         }
+        .control-group { pointer-events: auto; }
 
-        .control-group {
-            pointer-events: auto;
+        /* Joystick (Left) */
+        #joystick-zone {
+            position: relative; width: 150px; height: 150px;
+            margin-bottom: 20px; margin-left: 20px;
         }
-
-        /* D-Pad (Left) */
-        #d-pad {
-            display: grid;
-            grid-template-columns: 60px 60px 60px;
-            grid-template-rows: 60px 60px 60px;
-            gap: 5px;
-            margin-bottom: 20px;
-            margin-left: 20px;
+        #joy-base {
+            position: absolute; width: 120px; height: 120px;
+            background: rgba(255, 255, 255, 0.2); border: 3px solid rgba(255,255,255,0.4);
+            border-radius: 50%; top: 15px; left: 15px;
         }
-        .d-btn {
-            background: rgba(255, 255, 255, 0.3);
-            border: 2px solid rgba(255, 255, 255, 0.5);
-            border-radius: 10px;
-            color: white;
-            font-weight: bold;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            user-select: none;
+        #joy-stick {
+            position: absolute; width: 50px; height: 50px;
+            background: rgba(255, 255, 255, 0.8); border-radius: 50%;
+            top: 50px; left: 50px; transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
         }
-        .d-btn:active, .action-btn:active {
-            background: rgba(255, 255, 255, 0.6);
-        }
-        #btn-up { grid-column: 2; grid-row: 1; }
-        #btn-left { grid-column: 1; grid-row: 2; }
-        #btn-right { grid-column: 3; grid-row: 2; }
-        #btn-down { grid-column: 2; grid-row: 3; }
 
         /* Action Buttons (Right) */
         #action-buttons {
-            position: relative;
-            width: 200px;
-            height: 200px;
-            margin-bottom: 20px;
-            margin-right: 20px;
+            position: relative; width: 200px; height: 200px;
+            margin-bottom: 20px; margin-right: 20px;
         }
         .action-btn {
-            position: absolute;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: rgba(255, 50, 50, 0.5);
-            border: 2px solid rgba(255, 255, 255, 0.5);
-            color: white;
-            font-weight: bold;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            user-select: none;
+            position: absolute; width: 55px; height: 55px; border-radius: 50%;
+            background: rgba(255, 50, 50, 0.5); border: 2px solid rgba(255, 255, 255, 0.5);
+            color: white; font-weight: bold; font-size: 18px;
+            display: flex; justify-content: center; align-items: center; user-select: none;
         }
+        .action-btn:active { background: rgba(255, 255, 255, 0.6) !important; color: black; }
+        
         #btn-y { top: 0; left: 75px; background: rgba(255, 200, 0, 0.5); }
-        #btn-x { top: 60px; left: 15px; background: rgba(50, 50, 255, 0.5); }
-        #btn-b { top: 60px; left: 135px; background: rgba(255, 50, 50, 0.5); }
-        #btn-a { top: 120px; left: 75px; background: rgba(50, 255, 50, 0.5); }
-        #btn-special { top: 140px; left: 150px; width: 60px; height: 60px; background: rgba(200, 50, 255, 0.5); }
+        #btn-x { top: 65px; left: 10px; background: rgba(50, 50, 255, 0.5); }
+        #btn-b { top: 65px; left: 140px; background: rgba(255, 50, 50, 0.5); }
+        #btn-a { top: 130px; left: 75px; background: rgba(50, 255, 50, 0.5); }
+        #btn-special { top: 140px; left: 150px; width: 65px; height: 65px; background: rgba(200, 50, 255, 0.5); font-size: 14px;}
 
-        /* Health Bars */
+        /* HUD */
         #hud {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            right: 20px;
-            display: flex;
-            justify-content: space-between;
-            pointer-events: none;
+            position: absolute; top: 20px; left: 20px; right: 20px;
+            display: flex; justify-content: space-between; pointer-events: none;
         }
         .health-bar-container {
-            width: 40%;
-            height: 30px;
-            background: rgba(0,0,0,0.5);
-            border: 2px solid white;
+            width: 40%; height: 25px; background: rgba(0,0,0,0.5); border: 2px solid white;
         }
-        .health-fill {
-            height: 100%;
-            background: #00ff00;
-            width: 100%;
-            transition: width 0.2s;
-        }
-        .player-name {
-            color: white;
-            font-weight: bold;
-            margin-bottom: 5px;
-            text-transform: uppercase;
-        }
+        .health-fill { height: 100%; background: #00ff00; width: 100%; transition: width 0.1s; }
+        .player-name { color: white; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; }
+        .cd-bar { height: 5px; background: #c832ff; width: 100%; margin-top: 5px; }
     </style>
 </head>
 <body>
@@ -133,22 +75,22 @@
     
     <div id="hud">
         <div style="width: 40%;">
-            <div class="player-name" id="p1-name">P1: Balanced Man</div>
+            <div class="player-name">P1: YOU</div>
             <div class="health-bar-container"><div id="p1-health" class="health-fill"></div></div>
+            <div id="p1-sp-cd" class="cd-bar"></div>
         </div>
         <div style="width: 40%; text-align: right;">
-            <div class="player-name" id="p2-name">P2: Big Man</div>
+            <div class="player-name">P2: DUMMY</div>
             <div class="health-bar-container"><div id="p2-health" class="health-fill"></div></div>
         </div>
     </div>
 
     <div id="ui-layer">
-        <!-- Virtual Joystick -->
-        <div id="d-pad" class="control-group">
-            <div class="d-btn" id="btn-up" data-key="up">W</div>
-            <div class="d-btn" id="btn-left" data-key="left">A</div>
-            <div class="d-btn" id="btn-right" data-key="right">D</div>
-            <div class="d-btn" id="btn-down" data-key="down">S</div>
+        <!-- Joystick -->
+        <div id="joystick-zone" class="control-group">
+            <div id="joy-base">
+                <div id="joy-stick"></div>
+            </div>
         </div>
 
         <!-- Action Buttons -->
@@ -162,243 +104,346 @@
     </div>
 
 <script>
-/**
- * ARCADE FIGHTER ENGINE (Vanilla JS / TypeScript Structure)
- */
-
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// Game constants
 const GRAVITY = 0.8;
-const GROUND_Y = 600;
+const GROUND_Y = 650;
+const FPS = 60;
 
-// Input State
-const keys = {
-    left: false, right: false, up: false, down: false,
-    a: false, b: false, x: false, y: false, special: false
-};
+// Input States
+const input = { a: false, b: false, x: false, y: false, special: false };
+const joystick = { x: 0, y: 0, active: false };
 
-// Bind Touch / Mouse events to UI buttons
-document.querySelectorAll('.d-btn, .action-btn').forEach(btn => {
-    const handleStart = (e) => { e.preventDefault(); keys[btn.dataset.key] = true; };
-    const handleEnd = (e) => { e.preventDefault(); keys[btn.dataset.key] = false; };
+// --- Joystick Logic ---
+const joyZone = document.getElementById('joystick-zone');
+const joyStick = document.getElementById('joy-stick');
+const joyBase = document.getElementById('joy-base');
+const maxRadius = 45;
+
+function handleJoy(e) {
+    e.preventDefault();
+    if (e.type === 'touchend' || e.type === 'mouseup') {
+        joystick.active = false;
+        joystick.x = 0; joystick.y = 0;
+        joyStick.style.transform = `translate(-50%, -50%)`;
+        return;
+    }
+    joystick.active = true;
+    let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    let rect = joyBase.getBoundingClientRect();
     
-    btn.addEventListener('touchstart', handleStart);
-    btn.addEventListener('mousedown', handleStart);
-    btn.addEventListener('touchend', handleEnd);
-    btn.addEventListener('mouseup', handleEnd);
-    btn.addEventListener('mouseleave', handleEnd);
+    let centerX = rect.left + rect.width / 2;
+    let centerY = rect.top + rect.height / 2;
+    
+    let dx = clientX - centerX;
+    let dy = clientY - centerY;
+    let distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > maxRadius) {
+        dx = (dx / distance) * maxRadius;
+        dy = (dy / distance) * maxRadius;
+    }
+    
+    joyStick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    joystick.x = dx / maxRadius;
+    joystick.y = dy / maxRadius;
+}
+
+joyZone.addEventListener('touchstart', handleJoy, {passive: false});
+joyZone.addEventListener('touchmove', handleJoy, {passive: false});
+joyZone.addEventListener('touchend', handleJoy, {passive: false});
+joyZone.addEventListener('mousedown', handleJoy);
+document.addEventListener('mousemove', (e) => { if (joystick.active) handleJoy(e); });
+document.addEventListener('mouseup', handleJoy);
+
+// --- Button Logic ---
+document.querySelectorAll('.action-btn').forEach(btn => {
+    const press = (e) => { e.preventDefault(); input[btn.dataset.key] = true; };
+    const release = (e) => { e.preventDefault(); input[btn.dataset.key] = false; };
+    btn.addEventListener('touchstart', press);
+    btn.addEventListener('mousedown', press);
+    btn.addEventListener('touchend', release);
+    btn.addEventListener('mouseup', release);
+    btn.addEventListener('mouseleave', release);
 });
 
-// Keyboard Fallback for desktop testing
+// Keyboard fallback for testing
 window.addEventListener('keydown', (e) => {
     switch(e.key.toLowerCase()) {
-        case 'a': keys.left = true; break;
-        case 'd': keys.right = true; break;
-        case 'w': keys.up = true; break;
-        case 's': keys.down = true; break;
-        case 'j': keys.a = true; break; // Map keyboard to action buttons
-        case 'k': keys.b = true; break;
-        case 'u': keys.x = true; break;
-        case 'i': keys.y = true; break;
-        case ' ': keys.special = true; break;
+        case 'j': input.a = true; break;
+        case 'k': input.b = true; break;
+        case 'u': input.x = true; break;
+        case 'i': input.y = true; break;
+        case ' ': input.special = true; break;
+        case 'w': joystick.y = -1; break;
+        case 's': joystick.y = 1; break;
+        case 'a': joystick.x = -1; break;
+        case 'd': joystick.x = 1; break;
     }
 });
 window.addEventListener('keyup', (e) => {
     switch(e.key.toLowerCase()) {
-        case 'a': keys.left = false; break;
-        case 'd': keys.right = false; break;
-        case 'w': keys.up = false; break;
-        case 's': keys.down = false; break;
-        case 'j': keys.a = false; break;
-        case 'k': keys.b = false; break;
-        case 'u': keys.x = false; break;
-        case 'i': keys.y = false; break;
-        case ' ': keys.special = false; break;
+        case 'j': input.a = false; break;
+        case 'k': input.b = false; break;
+        case 'u': input.x = false; break;
+        case 'i': input.y = false; break;
+        case ' ': input.special = false; break;
+        case 'w': case 's': joystick.y = 0; break;
+        case 'a': case 'd': joystick.x = 0; break;
     }
 });
 
-/**
- * Character Configs as requested:
- * 1. Balanced: All-around stats.
- * 2. Female Kicker: Fast speed, quick attacks, lower HP.
- * 3. Big Man: Slow, huge damage, high HP.
- * 4. Zoner: Throws projectiles (Special).
- */
-const CHARACTER_ROSTER = {
-    BALANCED: {
-        name: "Balanced Man",
-        width: 60, height: 120, color: '#3498db',
-        hp: 100, maxHp: 100, speed: 6, jumpPower: -15, attackDmg: 10,
-        atkWidth: 50, atkHeight: 20, atkFrames: 15, cooldown: 20
-    },
-    FAST_KICKER: {
-        name: "Fast Kicker",
-        width: 50, height: 110, color: '#e74c3c',
-        hp: 80, maxHp: 80, speed: 9, jumpPower: -16, attackDmg: 7,
-        atkWidth: 70, atkHeight: 30, atkFrames: 10, cooldown: 10
-    },
-    BIG_MAN: {
-        name: "Big Man",
-        width: 100, height: 140, color: '#2ecc71',
-        hp: 150, maxHp: 150, speed: 3, jumpPower: -12, attackDmg: 20,
-        atkWidth: 80, atkHeight: 50, atkFrames: 25, cooldown: 40
-    },
-    ZONER: {
-        name: "Zoner",
-        width: 60, height: 120, color: '#9b59b6',
-        hp: 90, maxHp: 90, speed: 5, jumpPower: -14, attackDmg: 8,
-        atkWidth: 40, atkHeight: 20, atkFrames: 15, cooldown: 20,
-        canShoot: true
-    }
+// --- Mathematical / Kinematics Utilities ---
+function lerp(start, end, amt) {
+    return (1 - amt) * start + amt * end;
+}
+function toRad(deg) { return deg * Math.PI / 180; }
+
+// Reference skeleton configuration
+const DEFAULT_POSE = {
+    lShoulder: 80, lElbow: 10,
+    rShoulder: 100, rElbow: 10,
+    lHip: 80, lKnee: 10,
+    rHip: 100, rKnee: 10,
+    trunkTilt: 0
 };
 
-let projectiles = [];
-
-class Projectile {
-    constructor(x, y, dir, ownerId) {
-        this.x = x;
-        this.y = y;
-        this.width = 30;
-        this.height = 15;
-        this.speed = 10 * dir;
-        this.ownerId = ownerId;
-        this.active = true;
-        this.damage = 15;
-    }
-    update() {
-        this.x += this.speed;
-        if (this.x < 0 || this.x > canvas.width) this.active = false;
-    }
-    draw(ctx) {
-        ctx.fillStyle = '#f1c40f';
-        ctx.fillRect(this.x, this.y, this.width, this.height);
-    }
-}
-
-class Fighter {
-    constructor(x, y, config, id, isAI = false) {
+class HumanoidFighter {
+    constructor(x, id, color, isAI = false) {
         this.id = id;
         this.isAI = isAI;
         this.x = x;
-        this.y = y;
-        this.config = { ...config };
-        
-        this.width = this.config.width;
-        this.height = this.config.height;
-        this.hp = this.config.hp;
-        
-        this.velocity = { x: 0, y: 0 };
-        this.isJumping = false;
+        this.y = GROUND_Y;
+        this.vx = 0;
+        this.vy = 0;
+        this.hp = 100;
+        this.maxHp = 100;
+        this.color = color;
         this.facingRight = (id === 'P1');
         
-        // Attack state
-        this.isAttacking = false;
-        this.attackTimer = 0;
-        this.cooldownTimer = 0;
+        // Body proportions
+        this.sizes = {
+            head: 20, trunkW: 30, trunkH: 70, pelvisW: 34, pelvisH: 20,
+            upperArm: 40, lowerArm: 40, upperLeg: 50, lowerLeg: 50, foot: 20
+        };
+
+        // Animation / IK State
+        this.pose = { ...DEFAULT_POSE };
+        this.targetPose = { ...DEFAULT_POSE };
+        this.globalRotation = 0; // For special spin
         
-        // Hitbox relative to character
-        this.hitbox = { x: 0, y: 0, width: 0, height: 0, active: false };
+        // Combat State
+        this.state = 'idle'; // idle, walk, jump, punchA, punchB, kickX, kickY, spin
+        this.stateTimer = 0;
+        this.hasHit = false; // Prevent multi-hit in one attack frame
+        this.spCooldown = 0;
+        this.spMaxCooldown = FPS * 5; // 5 seconds
+        
+        // Dynamic Hitboxes tracking
+        this.limbs = { lHand: {x:0,y:0}, rHand: {x:0,y:0}, lFoot: {x:0,y:0}, rFoot: {x:0,y:0} };
+        this.bodyBox = { x: 0, y: 0, w: 0, h: 0 };
     }
 
     update(opponent) {
-        // AI Logic or Input handling
-        let moveLeft = false, moveRight = false, jump = false, attack = false, special = false;
+        if (this.spCooldown > 0) this.spCooldown--;
 
-        if (!this.isAI) {
-            moveLeft = keys.left;
-            moveRight = keys.right;
-            jump = keys.up;
-            if (keys.a || keys.b || keys.x || keys.y) attack = true;
-            if (keys.special) special = true;
-        } else {
-            // Very Basic AI: walk towards player and attack when close
-            const dist = opponent.x - this.x;
-            if (Math.abs(dist) > this.config.atkWidth) {
-                if (dist > 0) moveRight = true;
-                else moveLeft = true;
-            } else {
-                if (Math.random() < 0.05) attack = true; // 5% chance per frame to attack
-            }
-            // Always face opponent
-            this.facingRight = dist > 0;
+        let jx = this.isAI ? 0 : joystick.x;
+        let jy = this.isAI ? 0 : joystick.y;
+
+        // Determine Facing (unless spinning)
+        if (this.state !== 'spin' && !this.isAI && this.y >= GROUND_Y) {
+            if (opponent.x > this.x + 20) this.facingRight = true;
+            else if (opponent.x < this.x - 20) this.facingRight = false;
         }
 
-        // Apply movement if not currently doing a heavy attack frame
-        if (!this.isAttacking) {
-            if (moveLeft) {
-                this.velocity.x = -this.config.speed;
-                if(!this.isAI) this.facingRight = false;
-            } else if (moveRight) {
-                this.velocity.x = this.config.speed;
-                if(!this.isAI) this.facingRight = true;
-            } else {
-                this.velocity.x = 0;
+        // --- STATE MACHINE & INPUT ---
+        if (this.state === 'idle' || this.state === 'walk' || (this.y < GROUND_Y && !this.isAttacking())) {
+            
+            // Movement / Walk
+            if (Math.abs(jx) > 0.1 && this.y === GROUND_Y) {
+                this.vx = jx * 6;
+                this.state = 'walk';
+            } else if (this.y === GROUND_Y) {
+                this.vx = 0;
+                this.state = 'idle';
             }
 
-            if (jump && !this.isJumping) {
-                this.velocity.y = this.config.jumpPower;
-                this.isJumping = true;
+            // Jump (Up + Direction handled by reading jx at jump frame)
+            if (jy < -0.5 && this.y === GROUND_Y) {
+                this.vy = -16;
+                this.vx = jx * 8; // Preserve directional momentum
+                this.y -= 1;
+            }
+
+            // Attacks (Ground or Air)
+            if (!this.isAI) {
+                if (input.special && this.spCooldown === 0) {
+                    this.state = 'spin';
+                    this.stateTimer = FPS * 3; // 3 seconds spin
+                    this.hasHit = false;
+                } else if (input.a) { this.startAttack('punchA', 15); }
+                else if (input.b) { this.startAttack('punchB', 30); }
+                else if (input.x) { this.startAttack('kickX', 20); }
+                else if (input.y) { this.startAttack('kickY', 35); }
             }
         }
+
+        // --- STATE EXECUTIONS ---
+        this.updatePoses(jx);
 
         // Apply Physics
-        this.y += this.velocity.y;
-        this.velocity.y += GRAVITY;
-        this.x += this.velocity.x;
-
-        // Ground Collision
-        if (this.y + this.height >= GROUND_Y) {
-            this.y = GROUND_Y - this.height;
-            this.velocity.y = 0;
-            this.isJumping = false;
-        }
-        
-        // Wall Collision
-        if (this.x < 0) this.x = 0;
-        if (this.x + this.width > canvas.width) this.x = canvas.width - this.width;
-
-        // Combat Mechanics
-        if (this.cooldownTimer > 0) this.cooldownTimer--;
-
-        if ((attack || special) && !this.isAttacking && this.cooldownTimer === 0) {
-            if (special && this.config.canShoot) {
-                // Shoot projectile (Zoner)
-                let projX = this.facingRight ? this.x + this.width : this.x - 30;
-                projectiles.push(new Projectile(projX, this.y + this.height/2, this.facingRight ? 1 : -1, this.id));
-                this.cooldownTimer = this.config.cooldown * 2;
-            } else {
-                // Melee Attack
-                this.isAttacking = true;
-                this.attackTimer = this.config.atkFrames;
-                this.hitbox.width = this.config.atkWidth;
-                this.hitbox.height = this.config.atkHeight;
-                this.hitbox.active = true;
-            }
-        }
-
-        if (this.isAttacking) {
-            this.attackTimer--;
+        if (this.state === 'spin') {
+            // Spin movement tracks joystick directly, ignores gravity
+            this.vx = jx * 10;
+            this.vy = jy * 10;
+            this.globalRotation += (this.facingRight ? 15 : -15);
             
-            // Position hitbox
-            this.hitbox.y = this.y + 20; // attack height
-            if (this.facingRight) {
-                this.hitbox.x = this.x + this.width;
-            } else {
-                this.hitbox.x = this.x - this.hitbox.width;
+            this.stateTimer--;
+            if (this.stateTimer <= 0) {
+                this.state = 'idle';
+                this.globalRotation = 0;
+                this.spCooldown = this.spMaxCooldown;
             }
+        } else {
+            this.globalRotation = 0;
+            this.vy += GRAVITY;
+        }
 
-            // Check Collision with opponent
-            if (this.hitbox.active && this.checkCollision(this.hitbox, opponent)) {
-                opponent.takeDamage(this.config.attackDmg);
-                this.hitbox.active = false; // Only hit once per swing
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Ground / Bounds limits
+        if (this.y > GROUND_Y) {
+            this.y = GROUND_Y;
+            this.vy = 0;
+            if (this.state !== 'spin' && !this.isAttacking()) this.vx = 0; 
+        }
+        if (this.x < 30) this.x = 30;
+        if (this.x > canvas.width - 30) this.x = canvas.width - 30;
+
+        // Interpolate visual skeleton to target pose
+        for (let joint in this.pose) {
+            this.pose[joint] = lerp(this.pose[joint], this.targetPose[joint], 0.3);
+        }
+
+        // Advance Attack Timers
+        if (this.isAttacking()) {
+            this.stateTimer--;
+            this.checkHit(opponent);
+            if (this.stateTimer <= 0) this.state = 'idle';
+        }
+
+        // Update body bounding box for receiving damage
+        this.bodyBox = {
+            x: this.x - this.sizes.trunkW/2,
+            y: this.y - this.sizes.trunkH - this.sizes.pelvisH - this.sizes.head*2,
+            w: this.sizes.trunkW,
+            h: this.sizes.trunkH + this.sizes.pelvisH + this.sizes.head*2
+        };
+
+        // Update UI Cooldown
+        if(this.id === 'P1') {
+            const cdBar = document.getElementById('p1-sp-cd');
+            cdBar.style.width = `${(1 - (this.spCooldown / this.spMaxCooldown)) * 100}%`;
+        }
+    }
+
+    startAttack(attackName, duration) {
+        this.state = attackName;
+        this.stateTimer = duration;
+        this.hasHit = false;
+        if (this.y === GROUND_Y) this.vx = 0; // stop moving while ground attacking
+    }
+
+    isAttacking() {
+        return ['punchA', 'punchB', 'kickX', 'kickY'].includes(this.state);
+    }
+
+    updatePoses(jx) {
+        // Reset to default first
+        this.targetPose = { ...DEFAULT_POSE };
+
+        if (this.state === 'walk') {
+            let swing = Math.sin(Date.now() / 100) * 40;
+            this.targetPose.lShoulder = 80 + swing;
+            this.targetPose.rShoulder = 100 - swing;
+            this.targetPose.lHip = 90 - swing;
+            this.targetPose.rHip = 90 + swing;
+        } else if (this.y < GROUND_Y && !this.isAttacking() && this.state !== 'spin') {
+            // Jumping pose
+            this.targetPose.lHip = 30; this.targetPose.lKnee = 90;
+            this.targetPose.rHip = 120; this.targetPose.rKnee = 10;
+            this.targetPose.lShoulder = 0; this.targetPose.rShoulder = 180;
+        } else if (this.state === 'punchA') {
+            // Fast left punch
+            this.targetPose.lShoulder = -70; // forward
+            this.targetPose.lElbow = 0;      // straight
+            this.targetPose.rShoulder = 120; // back
+            this.targetPose.trunkTilt = -10;
+        } else if (this.state === 'punchB') {
+            // Heavy right punch (slow)
+            let progress = this.stateTimer / 30; // 1 to 0
+            if (progress > 0.5) { // winding up
+                this.targetPose.rShoulder = 180; this.targetPose.rElbow = 90;
+            } else { // strike
+                this.targetPose.rShoulder = -90; this.targetPose.rElbow = 0;
+                this.targetPose.lShoulder = 120;
+                this.targetPose.trunkTilt = -20;
             }
+        } else if (this.state === 'kickX') {
+            // Light kick
+            this.targetPose.lHip = -45;
+            this.targetPose.lKnee = 0;
+            this.targetPose.trunkTilt = 10;
+        } else if (this.state === 'kickY') {
+            // Heavy kick
+            let progress = this.stateTimer / 35;
+            if (progress > 0.6) { // knee up
+                this.targetPose.rHip = -60; this.targetPose.rKnee = 120;
+            } else { // snap
+                this.targetPose.rHip = -100; this.targetPose.rKnee = 0;
+                this.targetPose.trunkTilt = 30;
+            }
+        } else if (this.state === 'spin') {
+            // Limbs out during spin
+            this.targetPose.lShoulder = -90; this.targetPose.rShoulder = -90;
+            this.targetPose.lElbow = 0; this.targetPose.rElbow = 0;
+            this.targetPose.lHip = -30; this.targetPose.rHip = -30;
+        }
+    }
 
-            if (this.attackTimer <= 0) {
-                this.isAttacking = false;
-                this.hitbox.active = false;
-                this.cooldownTimer = this.config.cooldown;
+    checkHit(opponent) {
+        if (this.hasHit) return;
+
+        let strikePoint = null;
+        let damage = 0;
+
+        // Map state to limb
+        if (this.state === 'punchA') { strikePoint = this.limbs.lHand; damage = 5; }
+        else if (this.state === 'punchB') { strikePoint = this.limbs.rHand; damage = 15; }
+        else if (this.state === 'kickX') { strikePoint = this.limbs.lFoot; damage = 8; }
+        else if (this.state === 'kickY') { strikePoint = this.limbs.rFoot; damage = 20; }
+        else if (this.state === 'spin') { 
+            // Spin hits with any limb (check all). Periodically allow multi-hits.
+            if (this.stateTimer % 15 === 0) this.hasHit = false; // Hits every 15 frames
+            strikePoint = this.limbs.lHand; // simplified: checks primarily outer radius
+            damage = 5; 
+        }
+
+        if (strikePoint) {
+            let ob = opponent.bodyBox;
+            if (strikePoint.x > ob.x && strikePoint.x < ob.x + ob.w &&
+                strikePoint.y > ob.y && strikePoint.y < ob.y + ob.h) {
+                
+                opponent.takeDamage(damage);
+                this.hasHit = true;
+
+                // Knockback
+                let dir = (strikePoint.x > opponent.x) ? -1 : 1;
+                opponent.vx = dir * (damage * 0.5);
+                opponent.vy = -3;
             }
         }
     }
@@ -406,104 +451,156 @@ class Fighter {
     takeDamage(amount) {
         this.hp -= amount;
         if (this.hp < 0) this.hp = 0;
-        
-        // Update UI
         const healthBar = document.getElementById(`${this.id.toLowerCase()}-health`);
-        const percent = (this.hp / this.config.maxHp) * 100;
+        const percent = (this.hp / this.maxHp) * 100;
         healthBar.style.width = `${percent}%`;
         healthBar.style.background = percent > 30 ? '#00ff00' : '#ff0000';
     }
 
-    checkCollision(rect1, fighterObj) {
-        return (
-            rect1.x < fighterObj.x + fighterObj.width &&
-            rect1.x + rect1.width > fighterObj.x &&
-            rect1.y < fighterObj.y + fighterObj.height &&
-            rect1.y + rect1.height > fighterObj.y
-        );
+    // --- RENDERING W/ FORWARD KINEMATICS ---
+    drawLimbSegment(ctx, length, width, angleDeg, color) {
+        let rad = toRad(angleDeg * (this.facingRight ? 1 : -1));
+        ctx.rotate(rad);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, length);
+        ctx.stroke();
+        ctx.translate(0, length);
+        return rad;
     }
 
     draw(ctx) {
-        // Draw character body
-        ctx.fillStyle = this.config.color;
-        ctx.fillRect(this.x, this.y, this.width, this.height);
-
-        // Draw facing indicator (eyes)
-        ctx.fillStyle = 'white';
-        let eyeX = this.facingRight ? this.x + this.width - 15 : this.x + 5;
-        ctx.fillRect(eyeX, this.y + 10, 10, 10);
-
-        // Draw Hitbox if active
-        if (this.isAttacking && this.hitbox.active) {
-            ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
-            ctx.fillRect(this.hitbox.x, this.hitbox.y, this.hitbox.width, this.hitbox.height);
+        ctx.save();
+        ctx.translate(this.x, this.y - this.sizes.pelvisH - this.sizes.trunkH/2); // Origin near pelvis center
+        
+        if (this.state === 'spin') {
+            ctx.translate(0, -this.sizes.trunkH/2);
+            ctx.rotate(toRad(this.globalRotation));
+            ctx.translate(0, this.sizes.trunkH/2);
         }
+
+        let dir = this.facingRight ? 1 : -1;
+        
+        // --- Draw Back Limbs (Right side if facing right, Left side if facing left) ---
+        let backColor = '#999'; // darker for depth
+        let frontColor = this.color;
+
+        // Draw Right Arm
+        ctx.save();
+        ctx.translate(0, -this.sizes.trunkH/2); // Shoulder joint
+        this.drawLimbSegment(ctx, this.sizes.upperArm, 14, this.pose.rShoulder, backColor);
+        this.drawLimbSegment(ctx, this.sizes.lowerArm, 12, this.pose.rElbow, backColor);
+        this.saveLimbPos('rHand', ctx);
+        ctx.restore();
+
+        // Draw Right Leg
+        ctx.save();
+        ctx.translate(0, this.sizes.pelvisH); // Hip joint
+        this.drawLimbSegment(ctx, this.sizes.upperLeg, 16, this.pose.rHip, backColor);
+        this.drawLimbSegment(ctx, this.sizes.lowerLeg, 14, this.pose.rKnee, backColor);
+        this.drawLimbSegment(ctx, this.sizes.foot, 10, -90, backColor); // Foot
+        this.saveLimbPos('rFoot', ctx);
+        ctx.restore();
+
+        // --- Draw Body ---
+        ctx.save();
+        ctx.rotate(toRad(this.pose.trunkTilt * dir));
+        
+        // Pelvis
+        ctx.fillStyle = frontColor;
+        ctx.fillRect(-this.sizes.pelvisW/2, 0, this.sizes.pelvisW, this.sizes.pelvisH);
+        
+        // Trunk
+        ctx.fillRect(-this.sizes.trunkW/2, -this.sizes.trunkH, this.sizes.trunkW, this.sizes.trunkH);
+        
+        // Head
+        ctx.beginPath();
+        ctx.arc(0, -this.sizes.trunkH - this.sizes.head, this.sizes.head, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Eye (Facing direction)
+        ctx.fillStyle = 'white';
+        ctx.fillRect(dir * 10, -this.sizes.trunkH - this.sizes.head - 5, 5, 5);
+        ctx.restore();
+
+        // --- Draw Front Limbs ---
+        // Draw Left Arm
+        ctx.save();
+        ctx.translate(0, -this.sizes.trunkH/2); // Shoulder
+        this.drawLimbSegment(ctx, this.sizes.upperArm, 14, this.pose.lShoulder, frontColor);
+        this.drawLimbSegment(ctx, this.sizes.lowerArm, 12, this.pose.lElbow, frontColor);
+        this.saveLimbPos('lHand', ctx);
+        ctx.restore();
+
+        // Draw Left Leg
+        ctx.save();
+        ctx.translate(0, this.sizes.pelvisH); // Hip
+        this.drawLimbSegment(ctx, this.sizes.upperLeg, 16, this.pose.lHip, frontColor);
+        this.drawLimbSegment(ctx, this.sizes.lowerLeg, 14, this.pose.lKnee, frontColor);
+        this.drawLimbSegment(ctx, this.sizes.foot, 10, -90, frontColor); // Foot
+        this.saveLimbPos('lFoot', ctx);
+        ctx.restore();
+
+        ctx.restore();
+
+        // DEBUG: Draw Hitbox (Uncomment to see opponent body box)
+        /*
+        ctx.strokeStyle = 'yellow';
+        ctx.strokeRect(this.bodyBox.x, this.bodyBox.y, this.bodyBox.w, this.bodyBox.h);
+        
+        // Draw active strike points
+        if (this.isAttacking() || this.state === 'spin') {
+            ctx.fillStyle = 'red';
+            let pt = this.limbs.lHand;
+            if(this.state === 'punchB') pt = this.limbs.rHand;
+            if(this.state === 'kickX') pt = this.limbs.lFoot;
+            if(this.state === 'kickY') pt = this.limbs.rFoot;
+            ctx.beginPath(); ctx.arc(pt.x, pt.y, 10, 0, Math.PI*2); ctx.fill();
+        }
+        */
+    }
+
+    // Helper to extract absolute world coordinates of hands/feet after matrix transforms
+    saveLimbPos(name, ctx) {
+        let matrix = ctx.getTransform();
+        this.limbs[name].x = matrix.e;
+        this.limbs[name].y = matrix.f;
     }
 }
 
-// Initialize Players
-// Player 1: Balanced Man | Player 2 (AI): Big Man
-let p1 = new Fighter(200, 100, CHARACTER_ROSTER.BALANCED, 'P1', false);
-let p2 = new Fighter(900, 100, CHARACTER_ROSTER.BIG_MAN, 'P2', true);
+// Initialize
+const p1 = new HumanoidFighter(300, 'P1', '#3498db', false);
+const p2 = new HumanoidFighter(900, 'P2', '#e74c3c', true);
 
-document.getElementById('p1-name').innerText = `P1: ${p1.config.name}`;
-document.getElementById('p2-name').innerText = `P2: ${p2.config.name}`;
-
-// Game Loop
 function animate() {
-    window.requestAnimationFrame(animate);
+    requestAnimationFrame(animate);
     
-    // Clear canvas
+    // Clear & Draw Background
     ctx.fillStyle = '#333';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Draw Ground
     ctx.fillStyle = '#555';
     ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
 
-    // Update & Draw Players
     if (p1.hp > 0 && p2.hp > 0) {
         p1.update(p2);
         p2.update(p1);
-    }
-    
-    p1.draw(ctx);
-    p2.draw(ctx);
-
-    // Update & Draw Projectiles
-    for (let i = projectiles.length - 1; i >= 0; i--) {
-        let p = projectiles[i];
-        p.update();
-        p.draw(ctx);
-
-        // Check projectile collision against opponents
-        let target = p.ownerId === 'P1' ? p2 : p1;
-        if (p.active && target.hp > 0 && 
-            p.x < target.x + target.width &&
-            p.x + p.width > target.x &&
-            p.y < target.y + target.height &&
-            p.y + p.height > target.y) {
-            
-            target.takeDamage(p.damage);
-            p.active = false;
-        }
-
-        if (!p.active) {
-            projectiles.splice(i, 1);
-        }
-    }
-
-    // Game Over Text
-    if (p1.hp <= 0 || p2.hp <= 0) {
+    } else {
+        // Game Over Text
         ctx.fillStyle = 'white';
         ctx.font = '60px Arial';
         ctx.textAlign = 'center';
-        let winner = p1.hp > 0 ? "PLAYER 1 WINS!" : "PLAYER 2 WINS!";
+        let winner = p1.hp > 0 ? "YOU WIN!" : "DUMMY WINS!";
         ctx.fillText(winner, canvas.width/2, canvas.height/2);
     }
+
+    // Must draw P2 first if P1 is in front
+    p2.draw(ctx);
+    p1.draw(ctx);
 }
 
-// Start Game
 animate();
 </script>
 </body>
