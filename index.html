@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Arcade Fighter Prototype - Joystick & Limbs</title>
+    <title>Arcade Fighter Prototype - AI & Ragdoll Fix</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -86,14 +86,11 @@
     </div>
 
     <div id="ui-layer">
-        <!-- Joystick -->
         <div id="joystick-zone" class="control-group">
             <div id="joy-base">
                 <div id="joy-stick"></div>
             </div>
         </div>
-
-        <!-- Action Buttons -->
         <div id="action-buttons" class="control-group">
             <div class="action-btn" id="btn-y" data-key="y">Y</div>
             <div class="action-btn" id="btn-x" data-key="x">X</div>
@@ -111,11 +108,9 @@ const GRAVITY = 0.8;
 const GROUND_Y = 650;
 const FPS = 60;
 
-// Input States
 const input = { a: false, b: false, x: false, y: false, special: false };
 const joystick = { x: 0, y: 0, active: false };
 
-// --- Joystick Logic ---
 const joyZone = document.getElementById('joystick-zone');
 const joyStick = document.getElementById('joy-stick');
 const joyBase = document.getElementById('joy-base');
@@ -158,7 +153,6 @@ joyZone.addEventListener('mousedown', handleJoy);
 document.addEventListener('mousemove', (e) => { if (joystick.active) handleJoy(e); });
 document.addEventListener('mouseup', handleJoy);
 
-// --- Button Logic ---
 document.querySelectorAll('.action-btn').forEach(btn => {
     const press = (e) => { e.preventDefault(); input[btn.dataset.key] = true; };
     const release = (e) => { e.preventDefault(); input[btn.dataset.key] = false; };
@@ -169,7 +163,6 @@ document.querySelectorAll('.action-btn').forEach(btn => {
     btn.addEventListener('mouseleave', release);
 });
 
-// Keyboard fallback
 window.addEventListener('keydown', (e) => {
     switch(e.key.toLowerCase()) {
         case 'j': input.a = true; break;
@@ -195,17 +188,16 @@ window.addEventListener('keyup', (e) => {
     }
 });
 
-// Utilities
 function lerp(start, end, amt) { return (1 - amt) * start + amt * end; }
 function toRad(deg) { return deg * Math.PI / 180; }
 
-// FIX 1: Proper standing fighting stance instead of sitting on the floor
+// Natural standing posture: Knees bend backwards (positive), slight trunk forward lean (negative)
 const DEFAULT_POSE = {
-    lShoulder: 30, lElbow: -70,
-    rShoulder: 45, rElbow: -90,
-    lHip: 15, lKnee: -5,
-    rHip: -15, rKnee: -5,
-    trunkTilt: 5
+    lShoulder: -20, lElbow: -60,
+    rShoulder: 10, rElbow: -80,
+    lHip: -20, lKnee: 25,
+    rHip: 15, rKnee: 25,
+    trunkTilt: -5
 };
 
 class HumanoidFighter {
@@ -241,13 +233,50 @@ class HumanoidFighter {
     }
 
     update(opponent) {
+        // Ragdoll / Death State Physics
+        if (this.hp <= 0) {
+            if (this.state !== 'dead') {
+                this.state = 'dead';
+                this.vy = -6; // Pop up slightly when dying
+                this.vx = this.facingRight ? -4 : 4; // Knock back away from hit
+            }
+            
+            // Ragdoll pose falling flat onto back
+            this.targetPose = {
+                lShoulder: 160, lElbow: 0,
+                rShoulder: 180, rElbow: 0,
+                lHip: -10, lKnee: 15,
+                rHip: 10, rKnee: 20,
+                trunkTilt: 85 // Lying completely flat on back
+            };
+            
+            this.globalRotation = 0;
+            this.vy += GRAVITY;
+            this.x += this.vx;
+            this.y += this.vy;
+            
+            if (this.y > GROUND_Y) {
+                this.y = GROUND_Y;
+                this.vy = 0;
+                this.vx = 0; // Friction stops sliding on ground
+            }
+            
+            for (let joint in this.pose) {
+                this.pose[joint] = lerp(this.pose[joint], this.targetPose[joint], 0.15);
+            }
+            return; // Terminate early so normal logic does not override ragdoll
+        }
+
         if (this.spCooldown > 0) this.spCooldown--;
 
-        // FIX 3: Implemented AI Logic for Dummy movement and attacks
-        let jx = joystick.x;
-        let jy = joystick.y;
+        let jx = 0;
+        let jy = 0;
 
-        if (this.isAI && this.state !== 'spin') {
+        if (!this.isAI) {
+            jx = joystick.x;
+            jy = joystick.y;
+        } else if (this.state !== 'spin') {
+            // Independent AI Logic
             let dist = opponent.x - this.x;
             if (Math.abs(dist) > 65) {
                 jx = dist > 0 ? 0.5 : -0.5; // Walk toward player
@@ -259,8 +288,11 @@ class HumanoidFighter {
                     this.startAttack(attacks[Math.floor(Math.random() * attacks.length)], 25);
                 }
             }
-        } else if (this.isAI) {
-            jx = 0; jy = 0;
+            // AI independently decides to jump occasionally while grounded
+            if (Math.random() < 0.015 && this.y === GROUND_Y) {
+                jy = -1; // Jump trigger
+                jx = dist > 0 ? 0.6 : -0.6; // Jump aggressively towards player
+            }
         }
 
         if (this.state !== 'spin' && !this.isAI && this.y >= GROUND_Y) {
@@ -268,7 +300,6 @@ class HumanoidFighter {
             else if (opponent.x < this.x - 20) this.facingRight = false;
         }
 
-        // State Machine
         if (this.state === 'idle' || this.state === 'walk' || (this.y < GROUND_Y && !this.isAttacking())) {
             
             if (Math.abs(jx) > 0.1 && this.y === GROUND_Y) {
@@ -299,13 +330,11 @@ class HumanoidFighter {
 
         this.updatePoses(jx);
 
-        // Physics & Specific State Updates
         if (this.state === 'spin') {
             this.vx = jx * 10;
             this.vy = jy * 10;
             this.globalRotation += (this.facingRight ? 15 : -15);
             
-            // FIX 2: Check for hits during the spin animation tick
             this.checkHit(opponent);
 
             this.stateTimer--;
@@ -369,15 +398,14 @@ class HumanoidFighter {
 
         if (this.state === 'walk') {
             let swing = Math.sin(Date.now() / 100) * 40;
-            this.targetPose.lShoulder = 30 + swing;
-            this.targetPose.rShoulder = 45 - swing;
-            this.targetPose.lHip = 15 - swing;
-            this.targetPose.rHip = -15 + swing;
+            this.targetPose.lShoulder = -20 + swing;
+            this.targetPose.rShoulder = 10 - swing;
+            this.targetPose.lHip = -15 - swing;
+            this.targetPose.rHip = 15 + swing;
         } else if (this.y < GROUND_Y && !this.isAttacking() && this.state !== 'spin') {
-            // FIX: More realistic jumping pose
-            this.targetPose.lHip = -20; this.targetPose.lKnee = -90; 
-            this.targetPose.rHip = 45; this.targetPose.rKnee = -45;
-            this.targetPose.lShoulder = 150; this.targetPose.rShoulder = 150; 
+            this.targetPose.lHip = -40; this.targetPose.lKnee = 80; 
+            this.targetPose.rHip = -20; this.targetPose.rKnee = 60;
+            this.targetPose.lShoulder = -150; this.targetPose.rShoulder = 150; 
         } else if (this.state === 'punchA') {
             this.targetPose.lShoulder = -90; 
             this.targetPose.lElbow = 0;      
@@ -393,13 +421,13 @@ class HumanoidFighter {
                 this.targetPose.trunkTilt = -20;
             }
         } else if (this.state === 'kickX') {
-            this.targetPose.lHip = -45;
-            this.targetPose.lKnee = 0;
+            this.targetPose.lHip = -70;
+            this.targetPose.lKnee = 10;
             this.targetPose.trunkTilt = 10;
         } else if (this.state === 'kickY') {
             let progress = this.stateTimer / 35;
             if (progress > 0.6) { 
-                this.targetPose.rHip = -60; this.targetPose.rKnee = -120;
+                this.targetPose.rHip = -80; this.targetPose.rKnee = 100;
             } else { 
                 this.targetPose.rHip = -100; this.targetPose.rKnee = 0;
                 this.targetPose.trunkTilt = 30;
@@ -412,7 +440,7 @@ class HumanoidFighter {
     }
 
     checkHit(opponent) {
-        if (this.hasHit) return;
+        if (this.hasHit || opponent.hp <= 0) return;
 
         let strikePoint = null;
         let damage = 0;
@@ -443,6 +471,7 @@ class HumanoidFighter {
     }
 
     takeDamage(amount) {
+        if (this.hp <= 0) return;
         this.hp -= amount;
         if (this.hp < 0) this.hp = 0;
         const healthBar = document.getElementById(`${this.id.toLowerCase()}-health`);
@@ -480,7 +509,6 @@ class HumanoidFighter {
         let backColor = '#999'; 
         let frontColor = this.color;
 
-        // Draw Right Arm
         ctx.save();
         ctx.translate(0, -this.sizes.trunkH/2); 
         this.drawLimbSegment(ctx, this.sizes.upperArm, 14, this.pose.rShoulder, backColor);
@@ -488,7 +516,6 @@ class HumanoidFighter {
         this.saveLimbPos('rHand', ctx);
         ctx.restore();
 
-        // Draw Right Leg
         ctx.save();
         ctx.translate(0, this.sizes.pelvisH); 
         this.drawLimbSegment(ctx, this.sizes.upperLeg, 16, this.pose.rHip, backColor);
@@ -497,7 +524,6 @@ class HumanoidFighter {
         this.saveLimbPos('rFoot', ctx);
         ctx.restore();
 
-        // Draw Body
         ctx.save();
         ctx.rotate(toRad(this.pose.trunkTilt * dir));
         
@@ -513,7 +539,6 @@ class HumanoidFighter {
         ctx.fillRect(dir * 10, -this.sizes.trunkH - this.sizes.head - 5, 5, 5);
         ctx.restore();
 
-        // Draw Left Arm
         ctx.save();
         ctx.translate(0, -this.sizes.trunkH/2); 
         this.drawLimbSegment(ctx, this.sizes.upperArm, 14, this.pose.lShoulder, frontColor);
@@ -521,7 +546,6 @@ class HumanoidFighter {
         this.saveLimbPos('lHand', ctx);
         ctx.restore();
 
-        // Draw Left Leg
         ctx.save();
         ctx.translate(0, this.sizes.pelvisH); 
         this.drawLimbSegment(ctx, this.sizes.upperLeg, 16, this.pose.lHip, frontColor);
@@ -551,19 +575,20 @@ function animate() {
     ctx.fillStyle = '#555';
     ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
 
-    if (p1.hp > 0 && p2.hp > 0) {
-        p1.update(p2);
-        p2.update(p1);
-    } else {
+    // Call updates even if one is dead so the falling physics run
+    p1.update(p2);
+    p2.update(p1);
+    
+    p2.draw(ctx);
+    p1.draw(ctx);
+
+    if (p1.hp <= 0 || p2.hp <= 0) {
         ctx.fillStyle = 'white';
         ctx.font = '60px Arial';
         ctx.textAlign = 'center';
         let winner = p1.hp > 0 ? "YOU WIN!" : "DUMMY WINS!";
-        ctx.fillText(winner, canvas.width/2, canvas.height/2);
+        ctx.fillText(winner, canvas.width/2, canvas.height/2 - 100);
     }
-
-    p2.draw(ctx);
-    p1.draw(ctx);
 }
 
 animate();
