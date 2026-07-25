@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Arcade Fighter Prototype</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #222;
+            overflow: hidden;
+            touch-action: none; /* Prevent scrolling on mobile */
+            font-family: sans-serif;
+        }
+
+        #gameCanvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+
+        /* UI Overlay */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let clicks pass through to canvas if needed */
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .control-group {
+            pointer-events: auto;
+        }
+
+        /* D-Pad (Left) */
+        #d-pad {
+            display: grid;
+            grid-template-columns: 60px 60px 60px;
+            grid-template-rows: 60px 60px 60px;
+            gap: 5px;
+            margin-bottom: 20px;
+            margin-left: 20px;
+        }
+        .d-btn {
+            background: rgba(255, 255, 255, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 10px;
+            color: white;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+        }
+        .d-btn:active, .action-btn:active {
+            background: rgba(255, 255, 255, 0.6);
+        }
+        #btn-up { grid-column: 2; grid-row: 1; }
+        #btn-left { grid-column: 1; grid-row: 2; }
+        #btn-right { grid-column: 3; grid-row: 2; }
+        #btn-down { grid-column: 2; grid-row: 3; }
+
+        /* Action Buttons (Right) */
+        #action-buttons {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            margin-bottom: 20px;
+            margin-right: 20px;
+        }
+        .action-btn {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(255, 50, 50, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            color: white;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+        }
+        #btn-y { top: 0; left: 75px; background: rgba(255, 200, 0, 0.5); }
+        #btn-x { top: 60px; left: 15px; background: rgba(50, 50, 255, 0.5); }
+        #btn-b { top: 60px; left: 135px; background: rgba(255, 50, 50, 0.5); }
+        #btn-a { top: 120px; left: 75px; background: rgba(50, 255, 50, 0.5); }
+        #btn-special { top: 140px; left: 150px; width: 60px; height: 60px; background: rgba(200, 50, 255, 0.5); }
+
+        /* Health Bars */
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+        }
+        .health-bar-container {
+            width: 40%;
+            height: 30px;
+            background: rgba(0,0,0,0.5);
+            border: 2px solid white;
+        }
+        .health-fill {
+            height: 100%;
+            background: #00ff00;
+            width: 100%;
+            transition: width 0.2s;
+        }
+        .player-name {
+            color: white;
+            font-weight: bold;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas" width="1280" height="720"></canvas>
+    
+    <div id="hud">
+        <div style="width: 40%;">
+            <div class="player-name" id="p1-name">P1: Balanced Man</div>
+            <div class="health-bar-container"><div id="p1-health" class="health-fill"></div></div>
+        </div>
+        <div style="width: 40%; text-align: right;">
+            <div class="player-name" id="p2-name">P2: Big Man</div>
+            <div class="health-bar-container"><div id="p2-health" class="health-fill"></div></div>
+        </div>
+    </div>
+
+    <div id="ui-layer">
+        <!-- Virtual Joystick -->
+        <div id="d-pad" class="control-group">
+            <div class="d-btn" id="btn-up" data-key="up">W</div>
+            <div class="d-btn" id="btn-left" data-key="left">A</div>
+            <div class="d-btn" id="btn-right" data-key="right">D</div>
+            <div class="d-btn" id="btn-down" data-key="down">S</div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div id="action-buttons" class="control-group">
+            <div class="action-btn" id="btn-y" data-key="y">Y</div>
+            <div class="action-btn" id="btn-x" data-key="x">X</div>
+            <div class="action-btn" id="btn-b" data-key="b">B</div>
+            <div class="action-btn" id="btn-a" data-key="a">A</div>
+            <div class="action-btn" id="btn-special" data-key="special">SP</div>
+        </div>
+    </div>
+
+<script>
+/**
+ * ARCADE FIGHTER ENGINE (Vanilla JS / TypeScript Structure)
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Game constants
+const GRAVITY = 0.8;
+const GROUND_Y = 600;
+
+// Input State
+const keys = {
+    left: false, right: false, up: false, down: false,
+    a: false, b: false, x: false, y: false, special: false
+};
+
+// Bind Touch / Mouse events to UI buttons
+document.querySelectorAll('.d-btn, .action-btn').forEach(btn => {
+    const handleStart = (e) => { e.preventDefault(); keys[btn.dataset.key] = true; };
+    const handleEnd = (e) => { e.preventDefault(); keys[btn.dataset.key] = false; };
+    
+    btn.addEventListener('touchstart', handleStart);
+    btn.addEventListener('mousedown', handleStart);
+    btn.addEventListener('touchend', handleEnd);
+    btn.addEventListener('mouseup', handleEnd);
+    btn.addEventListener('mouseleave', handleEnd);
+});
+
+// Keyboard Fallback for desktop testing
+window.addEventListener('keydown', (e) => {
+    switch(e.key.toLowerCase()) {
+        case 'a': keys.left = true; break;
+        case 'd': keys.right = true; break;
+        case 'w': keys.up = true; break;
+        case 's': keys.down = true; break;
+        case 'j': keys.a = true; break; // Map keyboard to action buttons
+        case 'k': keys.b = true; break;
+        case 'u': keys.x = true; break;
+        case 'i': keys.y = true; break;
+        case ' ': keys.special = true; break;
+    }
+});
+window.addEventListener('keyup', (e) => {
+    switch(e.key.toLowerCase()) {
+        case 'a': keys.left = false; break;
+        case 'd': keys.right = false; break;
+        case 'w': keys.up = false; break;
+        case 's': keys.down = false; break;
+        case 'j': keys.a = false; break;
+        case 'k': keys.b = false; break;
+        case 'u': keys.x = false; break;
+        case 'i': keys.y = false; break;
+        case ' ': keys.special = false; break;
+    }
+});
+
+/**
+ * Character Configs as requested:
+ * 1. Balanced: All-around stats.
+ * 2. Female Kicker: Fast speed, quick attacks, lower HP.
+ * 3. Big Man: Slow, huge damage, high HP.
+ * 4. Zoner: Throws projectiles (Special).
+ */
+const CHARACTER_ROSTER = {
+    BALANCED: {
+        name: "Balanced Man",
+        width: 60, height: 120, color: '#3498db',
+        hp: 100, maxHp: 100, speed: 6, jumpPower: -15, attackDmg: 10,
+        atkWidth: 50, atkHeight: 20, atkFrames: 15, cooldown: 20
+    },
+    FAST_KICKER: {
+        name: "Fast Kicker",
+        width: 50, height: 110, color: '#e74c3c',
+        hp: 80, maxHp: 80, speed: 9, jumpPower: -16, attackDmg: 7,
+        atkWidth: 70, atkHeight: 30, atkFrames: 10, cooldown: 10
+    },
+    BIG_MAN: {
+        name: "Big Man",
+        width: 100, height: 140, color: '#2ecc71',
+        hp: 150, maxHp: 150, speed: 3, jumpPower: -12, attackDmg: 20,
+        atkWidth: 80, atkHeight: 50, atkFrames: 25, cooldown: 40
+    },
+    ZONER: {
+        name: "Zoner",
+        width: 60, height: 120, color: '#9b59b6',
+        hp: 90, maxHp: 90, speed: 5, jumpPower: -14, attackDmg: 8,
+        atkWidth: 40, atkHeight: 20, atkFrames: 15, cooldown: 20,
+        canShoot: true
+    }
+};
+
+let projectiles = [];
+
+class Projectile {
+    constructor(x, y, dir, ownerId) {
+        this.x = x;
+        this.y = y;
+        this.width = 30;
+        this.height = 15;
+        this.speed = 10 * dir;
+        this.ownerId = ownerId;
+        this.active = true;
+        this.damage = 15;
+    }
+    update() {
+        this.x += this.speed;
+        if (this.x < 0 || this.x > canvas.width) this.active = false;
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#f1c40f';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+    }
+}
+
+class Fighter {
+    constructor(x, y, config, id, isAI = false) {
+        this.id = id;
+        this.isAI = isAI;
+        this.x = x;
+        this.y = y;
+        this.config = { ...config };
+        
+        this.width = this.config.width;
+        this.height = this.config.height;
+        this.hp = this.config.hp;
+        
+        this.velocity = { x: 0, y: 0 };
+        this.isJumping = false;
+        this.facingRight = (id === 'P1');
+        
+        // Attack state
+        this.isAttacking = false;
+        this.attackTimer = 0;
+        this.cooldownTimer = 0;
+        
+        // Hitbox relative to character
+        this.hitbox = { x: 0, y: 0, width: 0, height: 0, active: false };
+    }
+
+    update(opponent) {
+        // AI Logic or Input handling
+        let moveLeft = false, moveRight = false, jump = false, attack = false, special = false;
+
+        if (!this.isAI) {
+            moveLeft = keys.left;
+            moveRight = keys.right;
+            jump = keys.up;
+            if (keys.a || keys.b || keys.x || keys.y) attack = true;
+            if (keys.special) special = true;
+        } else {
+            // Very Basic AI: walk towards player and attack when close
+            const dist = opponent.x - this.x;
+            if (Math.abs(dist) > this.config.atkWidth) {
+                if (dist > 0) moveRight = true;
+                else moveLeft = true;
+            } else {
+                if (Math.random() < 0.05) attack = true; // 5% chance per frame to attack
+            }
+            // Always face opponent
+            this.facingRight = dist > 0;
+        }
+
+        // Apply movement if not currently doing a heavy attack frame
+        if (!this.isAttacking) {
+            if (moveLeft) {
+                this.velocity.x = -this.config.speed;
+                if(!this.isAI) this.facingRight = false;
+            } else if (moveRight) {
+                this.velocity.x = this.config.speed;
+                if(!this.isAI) this.facingRight = true;
+            } else {
+                this.velocity.x = 0;
+            }
+
+            if (jump && !this.isJumping) {
+                this.velocity.y = this.config.jumpPower;
+                this.isJumping = true;
+            }
+        }
+
+        // Apply Physics
+        this.y += this.velocity.y;
+        this.velocity.y += GRAVITY;
+        this.x += this.velocity.x;
+
+        // Ground Collision
+        if (this.y + this.height >= GROUND_Y) {
+            this.y = GROUND_Y - this.height;
+            this.velocity.y = 0;
+            this.isJumping = false;
+        }
+        
+        // Wall Collision
+        if (this.x < 0) this.x = 0;
+        if (this.x + this.width > canvas.width) this.x = canvas.width - this.width;
+
+        // Combat Mechanics
+        if (this.cooldownTimer > 0) this.cooldownTimer--;
+
+        if ((attack || special) && !this.isAttacking && this.cooldownTimer === 0) {
+            if (special && this.config.canShoot) {
+                // Shoot projectile (Zoner)
+                let projX = this.facingRight ? this.x + this.width : this.x - 30;
+                projectiles.push(new Projectile(projX, this.y + this.height/2, this.facingRight ? 1 : -1, this.id));
+                this.cooldownTimer = this.config.cooldown * 2;
+            } else {
+                // Melee Attack
+                this.isAttacking = true;
+                this.attackTimer = this.config.atkFrames;
+                this.hitbox.width = this.config.atkWidth;
+                this.hitbox.height = this.config.atkHeight;
+                this.hitbox.active = true;
+            }
+        }
+
+        if (this.isAttacking) {
+            this.attackTimer--;
+            
+            // Position hitbox
+            this.hitbox.y = this.y + 20; // attack height
+            if (this.facingRight) {
+                this.hitbox.x = this.x + this.width;
+            } else {
+                this.hitbox.x = this.x - this.hitbox.width;
+            }
+
+            // Check Collision with opponent
+            if (this.hitbox.active && this.checkCollision(this.hitbox, opponent)) {
+                opponent.takeDamage(this.config.attackDmg);
+                this.hitbox.active = false; // Only hit once per swing
+            }
+
+            if (this.attackTimer <= 0) {
+                this.isAttacking = false;
+                this.hitbox.active = false;
+                this.cooldownTimer = this.config.cooldown;
+            }
+        }
+    }
+
+    takeDamage(amount) {
+        this.hp -= amount;
+        if (this.hp < 0) this.hp = 0;
+        
+        // Update UI
+        const healthBar = document.getElementById(`${this.id.toLowerCase()}-health`);
+        const percent = (this.hp / this.config.maxHp) * 100;
+        healthBar.style.width = `${percent}%`;
+        healthBar.style.background = percent > 30 ? '#00ff00' : '#ff0000';
+    }
+
+    checkCollision(rect1, fighterObj) {
+        return (
+            rect1.x < fighterObj.x + fighterObj.width &&
+            rect1.x + rect1.width > fighterObj.x &&
+            rect1.y < fighterObj.y + fighterObj.height &&
+            rect1.y + rect1.height > fighterObj.y
+        );
+    }
+
+    draw(ctx) {
+        // Draw character body
+        ctx.fillStyle = this.config.color;
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+
+        // Draw facing indicator (eyes)
+        ctx.fillStyle = 'white';
+        let eyeX = this.facingRight ? this.x + this.width - 15 : this.x + 5;
+        ctx.fillRect(eyeX, this.y + 10, 10, 10);
+
+        // Draw Hitbox if active
+        if (this.isAttacking && this.hitbox.active) {
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+            ctx.fillRect(this.hitbox.x, this.hitbox.y, this.hitbox.width, this.hitbox.height);
+        }
+    }
+}
+
+// Initialize Players
+// Player 1: Balanced Man | Player 2 (AI): Big Man
+let p1 = new Fighter(200, 100, CHARACTER_ROSTER.BALANCED, 'P1', false);
+let p2 = new Fighter(900, 100, CHARACTER_ROSTER.BIG_MAN, 'P2', true);
+
+document.getElementById('p1-name').innerText = `P1: ${p1.config.name}`;
+document.getElementById('p2-name').innerText = `P2: ${p2.config.name}`;
+
+// Game Loop
+function animate() {
+    window.requestAnimationFrame(animate);
+    
+    // Clear canvas
+    ctx.fillStyle = '#333';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw Ground
+    ctx.fillStyle = '#555';
+    ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+
+    // Update & Draw Players
+    if (p1.hp > 0 && p2.hp > 0) {
+        p1.update(p2);
+        p2.update(p1);
+    }
+    
+    p1.draw(ctx);
+    p2.draw(ctx);
+
+    // Update & Draw Projectiles
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        let p = projectiles[i];
+        p.update();
+        p.draw(ctx);
+
+        // Check projectile collision against opponents
+        let target = p.ownerId === 'P1' ? p2 : p1;
+        if (p.active && target.hp > 0 && 
+            p.x < target.x + target.width &&
+            p.x + p.width > target.x &&
+            p.y < target.y + target.height &&
+            p.y + p.height > target.y) {
+            
+            target.takeDamage(p.damage);
+            p.active = false;
+        }
+
+        if (!p.active) {
+            projectiles.splice(i, 1);
+        }
+    }
+
+    // Game Over Text
+    if (p1.hp <= 0 || p2.hp <= 0) {
+        ctx.fillStyle = 'white';
+        ctx.font = '60px Arial';
+        ctx.textAlign = 'center';
+        let winner = p1.hp > 0 ? "PLAYER 1 WINS!" : "PLAYER 2 WINS!";
+        ctx.fillText(winner, canvas.width/2, canvas.height/2);
+    }
+}
+
+// Start Game
+animate();
+</script>
+</body>
+</html>
