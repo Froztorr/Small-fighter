@@ -1,3 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Arcade Fighter Prototype - Joystick & Limbs</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #222; overflow: hidden;
+            touch-action: none; font-family: sans-serif;
+        }
+        #gameCanvas {
+            width: 100vw; height: 100vh; display: block;
+        }
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: flex; justify-content: space-between;
+            align-items: flex-end; padding: 20px; box-sizing: border-box;
+        }
+        .control-group { pointer-events: auto; }
+
+        /* Joystick (Left) */
+        #joystick-zone {
+            position: relative; width: 150px; height: 150px;
+            margin-bottom: 20px; margin-left: 20px;
+        }
+        #joy-base {
+            position: absolute; width: 120px; height: 120px;
+            background: rgba(255, 255, 255, 0.2); border: 3px solid rgba(255,255,255,0.4);
+            border-radius: 50%; top: 15px; left: 15px;
+        }
+        #joy-stick {
+            position: absolute; width: 50px; height: 50px;
+            background: rgba(255, 255, 255, 0.8); border-radius: 50%;
+            top: 50px; left: 50px; transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        /* Action Buttons (Right) */
+        #action-buttons {
+            position: relative; width: 200px; height: 200px;
+            margin-bottom: 20px; margin-right: 20px;
+        }
+        .action-btn {
+            position: absolute; width: 55px; height: 55px; border-radius: 50%;
+            background: rgba(255, 50, 50, 0.5); border: 2px solid rgba(255, 255, 255, 0.5);
+            color: white; font-weight: bold; font-size: 18px;
+            display: flex; justify-content: center; align-items: center; user-select: none;
+        }
+        .action-btn:active { background: rgba(255, 255, 255, 0.6) !important; color: black; }
+        
+        #btn-y { top: 0; left: 75px; background: rgba(255, 200, 0, 0.5); }
+        #btn-x { top: 65px; left: 10px; background: rgba(50, 50, 255, 0.5); }
+        #btn-b { top: 65px; left: 140px; background: rgba(255, 50, 50, 0.5); }
+        #btn-a { top: 130px; left: 75px; background: rgba(50, 255, 50, 0.5); }
+        #btn-special { top: 140px; left: 150px; width: 65px; height: 65px; background: rgba(200, 50, 255, 0.5); font-size: 14px;}
+
+        /* HUD */
+        #hud {
+            position: absolute; top: 20px; left: 20px; right: 20px;
+            display: flex; justify-content: space-between; pointer-events: none;
+        }
+        .health-bar-container {
+            width: 40%; height: 25px; background: rgba(0,0,0,0.5); border: 2px solid white;
+        }
+        .health-fill { height: 100%; background: #00ff00; width: 100%; transition: width 0.1s; }
+        .player-name { color: white; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; }
+        .cd-bar { height: 5px; background: #c832ff; width: 100%; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas" width="1280" height="720"></canvas>
+    
+    <div id="hud">
+        <div style="width: 40%;">
+            <div class="player-name">P1: YOU</div>
+            <div class="health-bar-container"><div id="p1-health" class="health-fill"></div></div>
+            <div id="p1-sp-cd" class="cd-bar"></div>
+        </div>
+        <div style="width: 40%; text-align: right;">
+            <div class="player-name">P2: DUMMY</div>
+            <div class="health-bar-container"><div id="p2-health" class="health-fill"></div></div>
+        </div>
+    </div>
+
+    <div id="ui-layer">
+        <!-- Joystick -->
+        <div id="joystick-zone" class="control-group">
+            <div id="joy-base">
+                <div id="joy-stick"></div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div id="action-buttons" class="control-group">
+            <div class="action-btn" id="btn-y" data-key="y">Y</div>
+            <div class="action-btn" id="btn-x" data-key="x">X</div>
+            <div class="action-btn" id="btn-b" data-key="b">B</div>
+            <div class="action-btn" id="btn-a" data-key="a">A</div>
+            <div class="action-btn" id="btn-special" data-key="special">SP</div>
+        </div>
+    </div>
+
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -463,3 +568,5 @@ function animate() {
 
 animate();
 </script>
+</body>
+</html>
