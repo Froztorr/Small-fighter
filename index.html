@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Arcade Fighter Prototype - AI & Ragdoll Fix</title>
+    <title>Arcade Fighter Prototype - Stickman Edition</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -191,13 +191,13 @@ window.addEventListener('keyup', (e) => {
 function lerp(start, end, amt) { return (1 - amt) * start + amt * end; }
 function toRad(deg) { return deg * Math.PI / 180; }
 
-// Natural standing posture: Knees bend backwards (positive), slight trunk forward lean (negative)
+// Authentic Stickman Stance (Guarding, bent knees, lean forward)
 const DEFAULT_POSE = {
-    lShoulder: -20, lElbow: -60,
-    rShoulder: 10, rElbow: -80,
-    lHip: -20, lKnee: 25,
-    rHip: 15, rKnee: 25,
-    trunkTilt: -5
+    lShoulder: -80, lElbow: -70,
+    rShoulder: -30, rElbow: -90,
+    lHip: -30, lKnee: 40,
+    rHip: 20, rKnee: 30,
+    trunkTilt: 10
 };
 
 class HumanoidFighter {
@@ -213,9 +213,11 @@ class HumanoidFighter {
         this.color = color;
         this.facingRight = (id === 'P1');
         
+        // Stickman proportions
         this.sizes = {
-            head: 20, trunkW: 30, trunkH: 70, pelvisW: 34, pelvisH: 20,
-            upperArm: 40, lowerArm: 40, upperLeg: 50, lowerLeg: 50, foot: 20
+            head: 15, trunkH: 60,
+            upperArm: 35, lowerArm: 35, 
+            upperLeg: 40, lowerLeg: 40
         };
 
         this.pose = { ...DEFAULT_POSE };
@@ -233,21 +235,20 @@ class HumanoidFighter {
     }
 
     update(opponent) {
-        // Ragdoll / Death State Physics
         if (this.hp <= 0) {
             if (this.state !== 'dead') {
                 this.state = 'dead';
-                this.vy = -6; // Pop up slightly when dying
-                this.vx = this.facingRight ? -4 : 4; // Knock back away from hit
+                this.vy = -6; 
+                this.vx = this.facingRight ? -4 : 4; 
             }
             
-            // Ragdoll pose falling flat onto back
+            // Lying flat on ground pose
             this.targetPose = {
                 lShoulder: 160, lElbow: 0,
                 rShoulder: 180, rElbow: 0,
-                lHip: -10, lKnee: 15,
-                rHip: 10, rKnee: 20,
-                trunkTilt: 85 // Lying completely flat on back
+                lHip: 90, lKnee: 0,
+                rHip: 70, rKnee: 0,
+                trunkTilt: 90 
             };
             
             this.globalRotation = 0;
@@ -258,13 +259,13 @@ class HumanoidFighter {
             if (this.y > GROUND_Y) {
                 this.y = GROUND_Y;
                 this.vy = 0;
-                this.vx = 0; // Friction stops sliding on ground
+                this.vx = 0; 
             }
             
             for (let joint in this.pose) {
                 this.pose[joint] = lerp(this.pose[joint], this.targetPose[joint], 0.15);
             }
-            return; // Terminate early so normal logic does not override ragdoll
+            return; 
         }
 
         if (this.spCooldown > 0) this.spCooldown--;
@@ -272,36 +273,34 @@ class HumanoidFighter {
         let jx = 0;
         let jy = 0;
 
+        // Player vs Independent AI logic
         if (!this.isAI) {
             jx = joystick.x;
             jy = joystick.y;
         } else if (this.state !== 'spin') {
-            // Independent AI Logic
             let dist = opponent.x - this.x;
             if (Math.abs(dist) > 65) {
-                jx = dist > 0 ? 0.5 : -0.5; // Walk toward player
+                jx = dist > 0 ? 0.5 : -0.5; // Walk towards player
             } else {
                 jx = 0;
-                // Attack randomly when in range
-                if (Math.random() < 0.03 && !this.isAttacking()) {
+                if (Math.random() < 0.04 && !this.isAttacking()) {
                     const attacks = ['punchA', 'punchB', 'kickX', 'kickY'];
                     this.startAttack(attacks[Math.floor(Math.random() * attacks.length)], 25);
                 }
             }
-            // AI independently decides to jump occasionally while grounded
+            // Decoupled Jump Logic
             if (Math.random() < 0.015 && this.y === GROUND_Y) {
-                jy = -1; // Jump trigger
-                jx = dist > 0 ? 0.6 : -0.6; // Jump aggressively towards player
+                jy = -1; 
+                jx = dist > 0 ? 0.6 : -0.6; 
             }
         }
 
-        if (this.state !== 'spin' && !this.isAI && this.y >= GROUND_Y) {
+        if (this.state !== 'spin' && this.y >= GROUND_Y) {
             if (opponent.x > this.x + 20) this.facingRight = true;
             else if (opponent.x < this.x - 20) this.facingRight = false;
         }
 
         if (this.state === 'idle' || this.state === 'walk' || (this.y < GROUND_Y && !this.isAttacking())) {
-            
             if (Math.abs(jx) > 0.1 && this.y === GROUND_Y) {
                 this.vx = jx * 6;
                 this.state = 'walk';
@@ -334,9 +333,7 @@ class HumanoidFighter {
             this.vx = jx * 10;
             this.vy = jy * 10;
             this.globalRotation += (this.facingRight ? 15 : -15);
-            
             this.checkHit(opponent);
-
             this.stateTimer--;
             if (this.stateTimer <= 0) {
                 this.state = 'idle';
@@ -370,10 +367,9 @@ class HumanoidFighter {
         }
 
         this.bodyBox = {
-            x: this.x - this.sizes.trunkW/2,
-            y: this.y - this.sizes.trunkH - this.sizes.pelvisH - this.sizes.head*2,
-            w: this.sizes.trunkW,
-            h: this.sizes.trunkH + this.sizes.pelvisH + this.sizes.head*2
+            x: this.x - 20,
+            y: this.y - 120,
+            w: 40, h: 120
         };
 
         if(this.id === 'P1') {
@@ -398,44 +394,50 @@ class HumanoidFighter {
 
         if (this.state === 'walk') {
             let swing = Math.sin(Date.now() / 100) * 40;
-            this.targetPose.lShoulder = -20 + swing;
-            this.targetPose.rShoulder = 10 - swing;
-            this.targetPose.lHip = -15 - swing;
-            this.targetPose.rHip = 15 + swing;
+            this.targetPose.lShoulder = -50 + swing;
+            this.targetPose.rShoulder = -50 - swing;
+            this.targetPose.lHip = -10 - swing;
+            this.targetPose.rHip = -10 + swing;
+            this.targetPose.lKnee = 20;
+            this.targetPose.rKnee = 20;
+            this.targetPose.trunkTilt = 15;
         } else if (this.y < GROUND_Y && !this.isAttacking() && this.state !== 'spin') {
-            this.targetPose.lHip = -40; this.targetPose.lKnee = 80; 
-            this.targetPose.rHip = -20; this.targetPose.rKnee = 60;
-            this.targetPose.lShoulder = -150; this.targetPose.rShoulder = 150; 
+            this.targetPose.lHip = -60; this.targetPose.lKnee = 100; 
+            this.targetPose.rHip = 10; this.targetPose.rKnee = 80;
+            this.targetPose.lShoulder = -120; this.targetPose.rShoulder = 120; 
         } else if (this.state === 'punchA') {
             this.targetPose.lShoulder = -90; 
             this.targetPose.lElbow = 0;      
-            this.targetPose.rShoulder = 120; 
-            this.targetPose.trunkTilt = -10;
+            this.targetPose.rShoulder = -30; 
+            this.targetPose.trunkTilt = 20;
         } else if (this.state === 'punchB') {
             let progress = this.stateTimer / 30; 
             if (progress > 0.5) { 
                 this.targetPose.rShoulder = 180; this.targetPose.rElbow = -90;
+                this.targetPose.lShoulder = -90;
             } else { 
                 this.targetPose.rShoulder = -90; this.targetPose.rElbow = 0;
                 this.targetPose.lShoulder = 120;
-                this.targetPose.trunkTilt = -20;
+                this.targetPose.trunkTilt = 30;
             }
         } else if (this.state === 'kickX') {
-            this.targetPose.lHip = -70;
-            this.targetPose.lKnee = 10;
-            this.targetPose.trunkTilt = 10;
+            this.targetPose.lHip = -90; this.targetPose.lKnee = 0;
+            this.targetPose.rHip = 10; this.targetPose.rKnee = 20;
+            this.targetPose.trunkTilt = -10;
         } else if (this.state === 'kickY') {
             let progress = this.stateTimer / 35;
             if (progress > 0.6) { 
-                this.targetPose.rHip = -80; this.targetPose.rKnee = 100;
+                this.targetPose.rHip = -90; this.targetPose.rKnee = 120;
+                this.targetPose.trunkTilt = 0;
             } else { 
-                this.targetPose.rHip = -100; this.targetPose.rKnee = 0;
-                this.targetPose.trunkTilt = 30;
+                this.targetPose.rHip = -120; this.targetPose.rKnee = 0;
+                this.targetPose.trunkTilt = -30;
             }
         } else if (this.state === 'spin') {
             this.targetPose.lShoulder = -90; this.targetPose.rShoulder = -90;
             this.targetPose.lElbow = 0; this.targetPose.rElbow = 0;
             this.targetPose.lHip = -30; this.targetPose.rHip = -30;
+            this.targetPose.trunkTilt = 0;
         }
     }
 
@@ -480,23 +482,27 @@ class HumanoidFighter {
         healthBar.style.background = percent > 30 ? '#00ff00' : '#ff0000';
     }
 
-    drawLimbSegment(ctx, length, width, angleDeg, color) {
-        let rad = toRad(angleDeg * (this.facingRight ? 1 : -1));
-        ctx.rotate(rad);
-        ctx.strokeStyle = color;
-        ctx.lineWidth = width;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(0, length);
-        ctx.stroke();
-        ctx.translate(0, length);
-        return rad;
+    drawLimbSegment(ctx, upperLen, lowerLen, angle1, angle2, saveName, dir) {
+        ctx.rotate(toRad(angle1 * dir));
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, upperLen); ctx.stroke();
+        
+        ctx.translate(0, upperLen);
+        ctx.rotate(toRad(angle2 * dir));
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, lowerLen); ctx.stroke();
+        
+        ctx.translate(0, lowerLen);
+        this.saveLimbPos(saveName, ctx);
     }
 
     draw(ctx) {
         ctx.save();
-        ctx.translate(this.x, this.y - this.sizes.pelvisH - this.sizes.trunkH/2);
+        
+        // Calculate procedural drop-to-floor offset for ragdoll
+        let targetPelvisY = this.y - this.sizes.upperLeg - this.sizes.lowerLeg + 15;
+        if (this.state === 'dead') targetPelvisY = this.y - 10;
+        this.pelvisY = lerp(this.pelvisY || targetPelvisY, targetPelvisY, 0.2);
+
+        ctx.translate(this.x, this.pelvisY);
         
         if (this.state === 'spin') {
             ctx.translate(0, -this.sizes.trunkH/2);
@@ -505,53 +511,54 @@ class HumanoidFighter {
         }
 
         let dir = this.facingRight ? 1 : -1;
+        let stickWidth = 8;
+        let color = this.color;
+
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         
-        let backColor = '#999'; 
-        let frontColor = this.color;
+        // Neck offset calculated from rotated trunk
+        let neckX = Math.sin(toRad(this.pose.trunkTilt * dir)) * this.sizes.trunkH;
+        let neckY = -Math.cos(toRad(this.pose.trunkTilt * dir)) * this.sizes.trunkH;
 
+        // Draw Back Arm
         ctx.save();
-        ctx.translate(0, -this.sizes.trunkH/2); 
-        this.drawLimbSegment(ctx, this.sizes.upperArm, 14, this.pose.rShoulder, backColor);
-        this.drawLimbSegment(ctx, this.sizes.lowerArm, 12, this.pose.rElbow, backColor);
-        this.saveLimbPos('rHand', ctx);
+        ctx.translate(neckX, neckY);
+        ctx.strokeStyle = '#999'; ctx.lineWidth = stickWidth;
+        this.drawLimbSegment(ctx, this.sizes.upperArm, this.sizes.lowerArm, this.pose.rShoulder, this.pose.rElbow, 'rHand', dir);
         ctx.restore();
 
+        // Draw Back Leg
         ctx.save();
-        ctx.translate(0, this.sizes.pelvisH); 
-        this.drawLimbSegment(ctx, this.sizes.upperLeg, 16, this.pose.rHip, backColor);
-        this.drawLimbSegment(ctx, this.sizes.lowerLeg, 14, this.pose.rKnee, backColor);
-        this.drawLimbSegment(ctx, this.sizes.foot, 10, -90, backColor); 
-        this.saveLimbPos('rFoot', ctx);
+        ctx.strokeStyle = '#999'; ctx.lineWidth = stickWidth;
+        this.drawLimbSegment(ctx, this.sizes.upperLeg, this.sizes.lowerLeg, this.pose.rHip, this.pose.rKnee, 'rFoot', dir);
         ctx.restore();
 
+        // Draw Trunk
         ctx.save();
         ctx.rotate(toRad(this.pose.trunkTilt * dir));
-        
-        ctx.fillStyle = frontColor;
-        ctx.fillRect(-this.sizes.pelvisW/2, 0, this.sizes.pelvisW, this.sizes.pelvisH);
-        ctx.fillRect(-this.sizes.trunkW/2, -this.sizes.trunkH, this.sizes.trunkW, this.sizes.trunkH);
-        
-        ctx.beginPath();
-        ctx.arc(0, -this.sizes.trunkH - this.sizes.head, this.sizes.head, 0, Math.PI * 2);
-        ctx.fill();
-        
-        ctx.fillStyle = 'white';
-        ctx.fillRect(dir * 10, -this.sizes.trunkH - this.sizes.head - 5, 5, 5);
+        ctx.strokeStyle = color; ctx.lineWidth = stickWidth + 1;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -this.sizes.trunkH); ctx.stroke();
+
+        // Inside Trunk context: Draw Head at neck position
+        ctx.translate(0, -this.sizes.trunkH);
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(0, -this.sizes.head, this.sizes.head, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'white'; // Eye
+        ctx.beginPath(); ctx.arc(dir * 6, -this.sizes.head - 3, 3, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
 
+        // Draw Front Arm
         ctx.save();
-        ctx.translate(0, -this.sizes.trunkH/2); 
-        this.drawLimbSegment(ctx, this.sizes.upperArm, 14, this.pose.lShoulder, frontColor);
-        this.drawLimbSegment(ctx, this.sizes.lowerArm, 12, this.pose.lElbow, frontColor);
-        this.saveLimbPos('lHand', ctx);
+        ctx.translate(neckX, neckY);
+        ctx.strokeStyle = color; ctx.lineWidth = stickWidth;
+        this.drawLimbSegment(ctx, this.sizes.upperArm, this.sizes.lowerArm, this.pose.lShoulder, this.pose.lElbow, 'lHand', dir);
         ctx.restore();
 
+        // Draw Front Leg
         ctx.save();
-        ctx.translate(0, this.sizes.pelvisH); 
-        this.drawLimbSegment(ctx, this.sizes.upperLeg, 16, this.pose.lHip, frontColor);
-        this.drawLimbSegment(ctx, this.sizes.lowerLeg, 14, this.pose.lKnee, frontColor);
-        this.drawLimbSegment(ctx, this.sizes.foot, 10, -90, frontColor); 
-        this.saveLimbPos('lFoot', ctx);
+        ctx.strokeStyle = color; ctx.lineWidth = stickWidth;
+        this.drawLimbSegment(ctx, this.sizes.upperLeg, this.sizes.lowerLeg, this.pose.lHip, this.pose.lKnee, 'lFoot', dir);
         ctx.restore();
 
         ctx.restore();
@@ -575,7 +582,6 @@ function animate() {
     ctx.fillStyle = '#555';
     ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
 
-    // Call updates even if one is dead so the falling physics run
     p1.update(p2);
     p2.update(p1);
     
