@@ -22,6 +22,25 @@
        address bar collapses. dvh tracks the real viewport; vh is the fallback. */
     body { position: fixed; inset: 0; }
     #stage { position: fixed; inset: 0; height: 100vh; height: 100dvh; }
+
+    /* Landscape is the only way this game reads properly, but iOS Safari has no
+       working orientation lock and plenty of people play with rotation lock on,
+       so asking them to turn the phone can leave them stuck. Instead the whole
+       stage is rotated a quarter turn whenever the viewport is portrait: held
+       sideways the picture is upright, regardless of the device's own setting.
+       Transforms apply right-to-left -- translate up by the element's own
+       height, then rotate about the top-left corner back into the viewport. */
+    #stage.force-landscape {
+        inset: auto; top: 0; left: 0;
+        width: 100vh; width: 100dvh;
+        height: 100vw;
+        transform: rotate(90deg) translate(0, -100%);
+        transform-origin: top left;
+    }
+    /* After a quarter turn the game's top edge sits along the physical right
+       edge, so the safe-area insets have to be swapped to match. */
+    #stage.force-landscape #hud { padding-top: max(10px, env(safe-area-inset-right)); }
+    #stage.force-landscape #controls { padding-bottom: max(18px, env(safe-area-inset-left)); }
     #gameCanvas { width: 100%; height: 100%; display: block; }
 
     /* ---------- HUD ---------- */
@@ -137,28 +156,31 @@
     #btn-mp { left: 200px; top: 26px; }
     #btn-mk { left: 200px; top: 88px; }
 
-    /* Short landscape (most iPhones held sideways) or any narrow screen:
-       shrink so the pad never crowds the fighters or runs past the edge. */
-    @media (max-height: 420px), (max-width: 540px) {
-        #buttons { --bs: 55px; --alt: 44px; width: 226px; height: 166px; }
-        #btn-y  { left: 57px; top: 0; }
-        #btn-x  { left: 0;    top: 54px; }
-        #btn-b  { left: 114px; top: 54px; }
-        #btn-a  { left: 57px; top: 108px; }
-        #btn-mp { left: 174px; top: 22px; }
-        #btn-mk { left: 174px; top: 76px; }
-        #stick-zone { width: 140px; height: 140px; }
-        #stick-base { width: 116px; height: 116px; left: 12px; bottom: 12px; }
-        #stick-knob { width: 50px; height: 50px; left: 45px; bottom: 45px; }
-    }
+    /* These are JS-driven classes rather than media queries on purpose. A media
+       query measures the viewport, but once the stage is rotated the space the
+       pad actually has is the stage's own box. Keying off the viewport would
+       give an upright phone the cramped layout despite the stage rendering
+       844px wide, and the controls would rearrange every time the player
+       turned the device. */
 
-    /* A phone held upright cannot fit the stick, the diamond and the two extra
-       buttons side by side. Drop the secondary MP/MK rather than let them run
-       off the edge -- the A/B/X/Y diamond is what has to stay reachable. */
-    @media (max-width: 480px) {
-        .btn.alt { display: none; }
-        #buttons { width: 169px; }
-    }
+    /* Short stage (most phones held sideways): shrink so the pad never crowds
+       the fighters or runs past the edge. */
+    #stage.compact #buttons { --bs: 55px; --alt: 44px; width: 226px; height: 166px; }
+    #stage.compact #btn-y  { left: 57px;  top: 0; }
+    #stage.compact #btn-x  { left: 0;     top: 54px; }
+    #stage.compact #btn-b  { left: 114px; top: 54px; }
+    #stage.compact #btn-a  { left: 57px;  top: 108px; }
+    #stage.compact #btn-mp { left: 174px; top: 22px; }
+    #stage.compact #btn-mk { left: 174px; top: 76px; }
+    #stage.compact #stick-zone { width: 140px; height: 140px; }
+    #stage.compact #stick-base { width: 116px; height: 116px; left: 12px; bottom: 12px; }
+    #stage.compact #stick-knob { width: 50px; height: 50px; left: 45px; bottom: 45px; }
+
+    /* Too narrow to fit the stick, the diamond and the two extras side by side.
+       Drop the secondary MP/MK rather than let them run off the edge -- the
+       A/B/X/Y diamond is what has to stay reachable. */
+    #stage.no-alt .btn.alt { display: none; }
+    #stage.no-alt #buttons { width: 169px; }
 
     /* ---------- Menus ---------- */
     .screen {
@@ -258,9 +280,6 @@
             Keyboard: A/D move &middot; W jump &middot; S crouch &middot; hold back to block &middot;
             U/I/O = light/medium/heavy punch &middot; J/K/L = light/medium/heavy kick &middot;
             double-tap forward to run
-        </div>
-        <div class="hint" id="rotate-hint" style="display:none">
-            Turn your phone sideways for a wider view of the stage.
         </div>
     </div>
 </div>
@@ -405,6 +424,10 @@ class InputSource {
 
 const P1_INPUT = new InputSource();
 
+// True while the stage is turned a quarter turn to force landscape. Read by the
+// touch handler to map finger movement back into the game's frame of reference.
+let ROTATED = false;
+
 /* Keyboard ---------------------------------------------------------- */
 const KEYMAP = {
     a: "left", d: "right", w: "up", s: "down",
@@ -442,10 +465,16 @@ function initTouch() {
     function moveStick(e) {
         const r = base.getBoundingClientRect();
         // Derive the throw from the rendered size so the stick still feels the
-        // same after the small-landscape media query shrinks it.
+        // same after the small-landscape media query shrinks it. A rotated
+        // circle's bounding box is still square and still centred on the
+        // circle, so this stays correct in forced-landscape mode.
         const maxr = r.width * 0.37;
         const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
         let dx = e.clientX - cx, dy = e.clientY - cy;
+        // Pointer coordinates are always screen-space. When the stage is turned
+        // a quarter turn, rotate the finger vector back into the game's frame
+        // or the stick would drive the fighter sideways to what the player sees.
+        if (ROTATED) { const t = dx; dx = dy; dy = -t; }
         const d = Math.hypot(dx, dy);
         if (d > maxr) { dx = dx / d * maxr; dy = dy / d * maxr; }
         knob.style.transform = `translate(${dx}px, ${dy}px)`;
@@ -2411,15 +2440,28 @@ resize();
 initTouch();
 buildSelect();
 
-// Nudge phone players to rotate: the stage is far more readable in landscape.
-function checkOrientation() {
-    const el = document.getElementById("rotate-hint");
-    const portraitPhone = window.innerHeight > window.innerWidth && navigator.maxTouchPoints > 0;
-    el.style.display = portraitPhone ? "block" : "none";
+/* Force landscape presentation on portrait viewports by turning the stage a
+   quarter turn, then re-fit the canvas to its new layout size. */
+function applyOrientation() {
+    const stage = document.getElementById("stage");
+    const portrait = window.innerHeight > window.innerWidth;
+    // Only rotate on touch devices -- a narrow desktop window should just be a
+    // narrow window, not a sideways one.
+    ROTATED = portrait && (navigator.maxTouchPoints > 0 || "ontouchstart" in window);
+    stage.classList.toggle("force-landscape", ROTATED);
+
+    // Size the pad against the stage's own box, which is the viewport swapped
+    // when rotated -- so the controls stay identical however the phone is held.
+    const stageW = ROTATED ? window.innerHeight : window.innerWidth;
+    const stageH = ROTATED ? window.innerWidth : window.innerHeight;
+    stage.classList.toggle("compact", stageH <= 420 || stageW <= 540);
+    stage.classList.toggle("no-alt", stageW <= 480);
+
+    resize();
 }
-window.addEventListener("resize", checkOrientation);
-window.addEventListener("orientationchange", () => setTimeout(checkOrientation, 150));
-checkOrientation();
+window.addEventListener("resize", applyOrientation);
+window.addEventListener("orientationchange", () => setTimeout(applyOrientation, 150));
+applyOrientation();
 
 requestAnimationFrame(loop);
 </script>
