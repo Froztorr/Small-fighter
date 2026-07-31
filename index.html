@@ -13,10 +13,15 @@
         margin: 0; padding: 0; width: 100%; height: 100%;
         background: #0b0c10; overflow: hidden;
         touch-action: none; user-select: none; -webkit-user-select: none;
+        -webkit-touch-callout: none;      /* no long-press callout on iOS */
+        overscroll-behavior: none;        /* no rubber-band scroll */
         font-family: "Segoe UI", Roboto, system-ui, sans-serif;
         color: #fff;
     }
-    #stage { position: absolute; inset: 0; }
+    /* Fixed rather than absolute: stops iOS Safari shifting the page when the
+       address bar collapses. dvh tracks the real viewport; vh is the fallback. */
+    body { position: fixed; inset: 0; }
+    #stage { position: fixed; inset: 0; height: 100vh; height: 100dvh; }
     #gameCanvas { width: 100%; height: 100%; display: block; }
 
     /* ---------- HUD ---------- */
@@ -108,19 +113,52 @@
     }
     #buttons {
         pointer-events: auto; position: relative;
-        display: grid; grid-template-columns: repeat(3, 62px); gap: 9px;
-        touch-action: none;
+        width: 258px; height: 190px; touch-action: none;
     }
     .btn {
-        width: 62px; height: 62px; border-radius: 50%;
+        position: absolute;
+        width: var(--bs); height: var(--bs); border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
-        font-weight: 800; font-size: 15px; letter-spacing: .5px;
+        font-weight: 800; font-size: 19px; letter-spacing: .5px;
         border: 2px solid rgba(255,255,255,.5); color: #fff;
         background: rgba(255,255,255,.12);
     }
+    #buttons { --bs: 64px; --alt: 50px; }
     .btn.p { background: rgba(90,150,255,.32); }
     .btn.k { background: rgba(255,110,90,.32); }
-    .btn.held { background: rgba(255,255,255,.75) !important; color: #111; transform: scale(.94); }
+    .btn.alt { width: var(--alt); height: var(--alt); font-size: 13px; opacity: .82; }
+    .btn.held { background: rgba(255,255,255,.8) !important; color: #111; transform: scale(.93); }
+
+    /* Diamond: Y on top, X left, B right, A bottom. */
+    #btn-y  { left: 66px; top: 0; }
+    #btn-x  { left: 0;    top: 62px; }
+    #btn-b  { left: 132px; top: 62px; }
+    #btn-a  { left: 66px; top: 124px; }
+    #btn-mp { left: 200px; top: 26px; }
+    #btn-mk { left: 200px; top: 88px; }
+
+    /* Short landscape (most iPhones held sideways) or any narrow screen:
+       shrink so the pad never crowds the fighters or runs past the edge. */
+    @media (max-height: 420px), (max-width: 540px) {
+        #buttons { --bs: 55px; --alt: 44px; width: 226px; height: 166px; }
+        #btn-y  { left: 57px; top: 0; }
+        #btn-x  { left: 0;    top: 54px; }
+        #btn-b  { left: 114px; top: 54px; }
+        #btn-a  { left: 57px; top: 108px; }
+        #btn-mp { left: 174px; top: 22px; }
+        #btn-mk { left: 174px; top: 76px; }
+        #stick-zone { width: 140px; height: 140px; }
+        #stick-base { width: 116px; height: 116px; left: 12px; bottom: 12px; }
+        #stick-knob { width: 50px; height: 50px; left: 45px; bottom: 45px; }
+    }
+
+    /* A phone held upright cannot fit the stick, the diamond and the two extra
+       buttons side by side. Drop the secondary MP/MK rather than let them run
+       off the edge -- the A/B/X/Y diamond is what has to stay reachable. */
+    @media (max-width: 480px) {
+        .btn.alt { display: none; }
+        #buttons { width: 169px; }
+    }
 
     /* ---------- Menus ---------- */
     .screen {
@@ -195,13 +233,16 @@
             <div id="stick-base"></div>
             <div id="stick-knob"></div>
         </div>
+        <!-- Gamepad diamond: X/Y are punches, A/B are kicks, which is the
+             standard fighting-game pad layout. MP/MK sit off to the side so the
+             full six-attack moveset is still reachable on a touchscreen. -->
         <div id="buttons">
-            <div class="btn p" data-btn="LP">LP</div>
-            <div class="btn p" data-btn="MP">MP</div>
-            <div class="btn p" data-btn="HP">HP</div>
-            <div class="btn k" data-btn="LK">LK</div>
-            <div class="btn k" data-btn="MK">MK</div>
-            <div class="btn k" data-btn="HK">HK</div>
+            <div class="btn p" id="btn-y" data-btn="HP">Y</div>
+            <div class="btn p" id="btn-x" data-btn="LP">X</div>
+            <div class="btn k" id="btn-b" data-btn="HK">B</div>
+            <div class="btn k" id="btn-a" data-btn="LK">A</div>
+            <div class="btn p alt" id="btn-mp" data-btn="MP">MP</div>
+            <div class="btn k alt" id="btn-mk" data-btn="MK">MK</div>
         </div>
     </div>
 
@@ -213,8 +254,13 @@
         <button class="go" id="start-btn">FIGHT</button>
         <div class="movelist" id="movelist"></div>
         <div class="hint">
+            Touch: stick to move, X/Y punch, A/B kick, MP/MK for medium attacks.<br>
             Keyboard: A/D move &middot; W jump &middot; S crouch &middot; hold back to block &middot;
-            U/I/O = LP/MP/HP &middot; J/K/L = LK/MK/HK &middot; double-tap forward to run
+            U/I/O = light/medium/heavy punch &middot; J/K/L = light/medium/heavy kick &middot;
+            double-tap forward to run
+        </div>
+        <div class="hint" id="rotate-hint" style="display:none">
+            Turn your phone sideways for a wider view of the stage.
         </div>
     </div>
 </div>
@@ -391,20 +437,22 @@ function initTouch() {
     const zone = document.getElementById("stick-zone");
     const base = document.getElementById("stick-base");
     const knob = document.getElementById("stick-knob");
-    const MAXR = 52;
     let stickId = null;
 
     function moveStick(e) {
         const r = base.getBoundingClientRect();
+        // Derive the throw from the rendered size so the stick still feels the
+        // same after the small-landscape media query shrinks it.
+        const maxr = r.width * 0.37;
         const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
         let dx = e.clientX - cx, dy = e.clientY - cy;
         const d = Math.hypot(dx, dy);
-        if (d > MAXR) { dx = dx / d * MAXR; dy = dy / d * MAXR; }
+        if (d > maxr) { dx = dx / d * maxr; dy = dy / d * maxr; }
         knob.style.transform = `translate(${dx}px, ${dy}px)`;
         // Normalise against a smaller radius so the stick reaches full tilt
         // before the knob hits the rim -- otherwise corners feel unreachable.
-        P1_INPUT.x = clamp(dx / (MAXR * 0.62), -1, 1);
-        P1_INPUT.y = clamp(dy / (MAXR * 0.62), -1, 1);
+        P1_INPUT.x = clamp(dx / (maxr * 0.62), -1, 1);
+        P1_INPUT.y = clamp(dy / (maxr * 0.62), -1, 1);
     }
     function resetStick() {
         stickId = null;
@@ -435,10 +483,18 @@ function initTouch() {
         el.addEventListener("pointercancel", off);
     });
 
-    // Show the on-screen pad only where it is actually usable.
-    if (window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window) {
-        document.getElementById("controls").classList.remove("hidden");
-    }
+    // Show the on-screen pad wherever there is a touchscreen. iPads reporting a
+    // fine pointer still have maxTouchPoints > 0, so check all three signals.
+    const touchy = window.matchMedia("(pointer: coarse)").matches
+        || "ontouchstart" in window
+        || navigator.maxTouchPoints > 0;
+    if (touchy) document.getElementById("controls").classList.remove("hidden");
+
+    // iOS Safari still pans and rubber-bands on drag unless the gesture is
+    // cancelled outright. The pad and canvas need every touch to stay put.
+    document.addEventListener("touchmove", e => e.preventDefault(), { passive: false });
+    // Suppress double-tap-to-zoom, which otherwise eats rapid button presses.
+    document.addEventListener("gesturestart", e => e.preventDefault());
 }
 
 /* ------------------------------------------------------------------ */
@@ -2329,8 +2385,12 @@ function buildMovelist() {
     for (const k in s.specials) {
         const m = s.specials[k];
         const motion = m.motion.map(d => notation[d] || d).join(" ");
-        html += `<b>${motion} + ${m.btns[0][1] === "P" ? "Punch" : "Kick"}</b><span>${m.name}</span>`;
+        // Punches live on X/Y, kicks on A/B -- name the pad buttons, not the
+        // internal LP/HP labels, so the list matches what is on screen.
+        html += `<b>${motion} + ${m.btns[0][1] === "P" ? "X / Y" : "A / B"}</b><span>${m.name}</span>`;
     }
+    html += `<b>X&nbsp;/&nbsp;Y</b><span>Light / heavy punch</span>`;
+    html += `<b>A&nbsp;/&nbsp;B</b><span>Light / heavy kick</span>`;
     html += `<b>→ →</b><span>Run</span>`;
     html += `<b>← ←</b><span>Back dash</span>`;
     html += `<b>Hold ←</b><span>Block (↙ blocks low)</span>`;
@@ -2350,6 +2410,17 @@ document.getElementById("start-btn").addEventListener("click", () => {
 resize();
 initTouch();
 buildSelect();
+
+// Nudge phone players to rotate: the stage is far more readable in landscape.
+function checkOrientation() {
+    const el = document.getElementById("rotate-hint");
+    const portraitPhone = window.innerHeight > window.innerWidth && navigator.maxTouchPoints > 0;
+    el.style.display = portraitPhone ? "block" : "none";
+}
+window.addEventListener("resize", checkOrientation);
+window.addEventListener("orientationchange", () => setTimeout(checkOrientation, 150));
+checkOrientation();
+
 requestAnimationFrame(loop);
 </script>
 </body>
