@@ -1,723 +1,2469 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Arcade Fighter Prototype - Expanded Mechanics</title>
-    <style>
-        body, html {
-            margin: 0; padding: 0; width: 100%; height: 100%;
-            background-color: #222; overflow: hidden;
-            touch-action: none; font-family: sans-serif;
-        }
-        #gameCanvas {
-            width: 100vw; height: 100vh; display: block;
-        }
-        #ui-layer {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; display: flex; justify-content: space-between;
-            align-items: flex-end; padding: 20px; box-sizing: border-box;
-        }
-        .control-group { pointer-events: auto; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#12131a">
+<title>Small Fighter</title>
+<style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+        margin: 0; padding: 0; width: 100%; height: 100%;
+        background: #0b0c10; overflow: hidden;
+        touch-action: none; user-select: none; -webkit-user-select: none;
+        -webkit-touch-callout: none;      /* no long-press callout on iOS */
+        overscroll-behavior: none;        /* no rubber-band scroll */
+        font-family: "Segoe UI", Roboto, system-ui, sans-serif;
+        color: #fff;
+    }
+    /* Fixed rather than absolute: stops iOS Safari shifting the page when the
+       address bar collapses. dvh tracks the real viewport; vh is the fallback. */
+    body { position: fixed; inset: 0; }
+    #stage { position: fixed; inset: 0; height: 100vh; height: 100dvh; }
 
-        /* Joystick (Left) */
-        #joystick-zone {
-            position: relative; width: 150px; height: 150px;
-            margin-bottom: 20px; margin-left: 20px;
-        }
-        #joy-base {
-            position: absolute; width: 120px; height: 120px;
-            background: rgba(255, 255, 255, 0.2); border: 3px solid rgba(255,255,255,0.4);
-            border-radius: 50%; top: 15px; left: 15px;
-        }
-        #joy-stick {
-            position: absolute; width: 50px; height: 50px;
-            background: rgba(255, 255, 255, 0.8); border-radius: 50%;
-            top: 50px; left: 50px; transform: translate(-50%, -50%);
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
-        }
+    /* Landscape is the only way this game reads properly, but iOS Safari has no
+       working orientation lock and plenty of people play with rotation lock on,
+       so asking them to turn the phone can leave them stuck. Instead the whole
+       stage is rotated a quarter turn whenever the viewport is portrait: held
+       sideways the picture is upright, regardless of the device's own setting.
+       Transforms apply right-to-left -- translate up by the element's own
+       height, then rotate about the top-left corner back into the viewport. */
+    #stage.force-landscape {
+        inset: auto; top: 0; left: 0;
+        width: 100vh; width: 100dvh;
+        height: 100vw;
+        transform: rotate(90deg) translate(0, -100%);
+        transform-origin: top left;
+    }
+    /* After a quarter turn the game's top edge sits along the physical right
+       edge, so the safe-area insets have to be swapped to match. */
+    #stage.force-landscape #hud { padding-top: max(10px, env(safe-area-inset-right)); }
+    #stage.force-landscape #controls { padding-bottom: max(18px, env(safe-area-inset-left)); }
+    #gameCanvas { width: 100%; height: 100%; display: block; }
 
-        /* Action Buttons (Right) */
-        #action-buttons {
-            position: relative; width: 220px; height: 200px;
-            margin-bottom: 20px; margin-right: 20px;
-        }
-        .action-btn {
-            position: absolute; width: 55px; height: 55px; border-radius: 50%;
-            background: rgba(255, 50, 50, 0.5); border: 2px solid rgba(255, 255, 255, 0.5);
-            color: white; font-weight: bold; font-size: 18px;
-            display: flex; justify-content: center; align-items: center; user-select: none;
-        }
-        .action-btn:active { background: rgba(255, 255, 255, 0.6) !important; color: black; }
-        
-        #btn-pj { top: 0; left: 150px; background: rgba(0, 255, 255, 0.5); font-size: 14px; }
-        #btn-y { top: 0; left: 75px; background: rgba(255, 200, 0, 0.5); }
-        #btn-x { top: 65px; left: 10px; background: rgba(50, 50, 255, 0.5); }
-        #btn-b { top: 65px; left: 140px; background: rgba(255, 50, 50, 0.5); }
-        #btn-a { top: 130px; left: 75px; background: rgba(50, 255, 50, 0.5); }
-        #btn-special { top: 140px; left: 150px; width: 65px; height: 65px; background: rgba(200, 50, 255, 0.5); font-size: 14px;}
+    /* ---------- HUD ---------- */
+    #hud {
+        position: absolute; top: 0; left: 0; right: 0;
+        padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top));
+        display: flex; align-items: flex-start; gap: 10px;
+        pointer-events: none;
+    }
+    .side { width: 42%; }
+    .side.right { display: flex; flex-direction: column; align-items: flex-end; }
+    .name-row { display: flex; align-items: baseline; gap: 8px; font-size: 12px; letter-spacing: 1px; }
+    .side.right .name-row { flex-direction: row-reverse; }
+    .fname { font-weight: 700; text-transform: uppercase; }
+    .fstyle { font-size: 10px; opacity: .6; text-transform: uppercase; }
+    .bar {
+        position: relative; width: 100%; height: 16px; margin-top: 4px;
+        background: #1b1d27; border: 2px solid rgba(255,255,255,.75);
+        overflow: hidden;
+    }
+    .bar .ghost { position: absolute; inset: 0; width: 100%; background: #d34b4b; transition: width .45s .2s ease-out; }
+    .bar .fill  { position: absolute; inset: 0; width: 100%; background: linear-gradient(180deg,#8dff6a,#33bb2e); }
+    .side.right .bar .ghost, .side.right .bar .fill { left: auto; right: 0; }
+    .bar.guard { height: 5px; margin-top: 3px; border-width: 1px; }
+    .bar.guard .fill { background: #7ec8ff; transition: width .1s; }
+    .meter {
+        width: 100%; height: 9px; margin-top: 5px;
+        background: #1b1d27; border: 1px solid rgba(255,255,255,.45);
+        position: relative; overflow: hidden;
+    }
+    .meter .fill { position: absolute; inset: 0; width: 0%; background: linear-gradient(180deg,#ffe37a,#e8a200); }
+    .side.right .meter .fill { left: auto; right: 0; }
+    .meter.full .fill { background: linear-gradient(180deg,#fff,#7ec8ff); animation: pulse .5s infinite alternate; }
+    @keyframes pulse { to { opacity: .55; } }
 
-        /* HUD */
-        #hud {
-            position: absolute; top: 20px; left: 20px; right: 20px;
-            display: flex; justify-content: space-between; pointer-events: none;
-        }
-        .health-bar-container {
-            width: 40%; height: 25px; background: rgba(0,0,0,0.5); border: 2px solid white;
-        }
-        .health-fill { height: 100%; background: #00ff00; width: 100%; transition: width 0.1s; }
-        .player-name { color: white; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; }
-        .cd-bar { height: 5px; background: #c832ff; width: 100%; margin-top: 5px; }
-    </style>
+    #center-hud {
+        flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    }
+    #timer { font-size: 30px; font-weight: 800; line-height: 1; text-shadow: 0 2px 0 #000; }
+    #rounds { display: flex; gap: 12px; }
+    .pips { display: flex; gap: 4px; }
+    .pip { width: 10px; height: 10px; border: 2px solid rgba(255,255,255,.6); border-radius: 50%; }
+    .pip.on { background: #ffd34a; border-color: #ffd34a; }
+
+    #combo-p1, #combo-p2 {
+        position: absolute; top: 92px; font-weight: 800; pointer-events: none;
+        text-shadow: 0 2px 0 #000; opacity: 0; transition: opacity .15s;
+    }
+    #combo-p1 { left: 16px; text-align: left; }
+    #combo-p2 { right: 16px; text-align: right; }
+    .combo-n { font-size: 30px; color: #ffd34a; line-height: 1; }
+    .combo-l { font-size: 11px; letter-spacing: 2px; opacity: .85; }
+
+    #announce {
+        position: absolute; top: 34%; left: 0; right: 0; text-align: center;
+        font-size: 46px; font-weight: 800; letter-spacing: 3px; pointer-events: none;
+        text-shadow: 0 4px 0 #000, 0 0 30px rgba(0,0,0,.8); opacity: 0;
+    }
+    #announce.show { animation: announce 1.4s ease-out; }
+    @keyframes announce {
+        0%   { opacity: 0; transform: scale(1.6); }
+        18%  { opacity: 1; transform: scale(1); }
+        75%  { opacity: 1; transform: scale(1); }
+        100% { opacity: 0; transform: scale(.9); }
+    }
+
+    /* ---------- Touch controls ---------- */
+    #controls {
+        position: absolute; inset: 0; pointer-events: none;
+        padding: 0 18px 18px; padding-bottom: max(18px, env(safe-area-inset-bottom));
+        display: flex; justify-content: space-between; align-items: flex-end;
+    }
+    #controls.hidden { display: none; }
+    #stick-zone {
+        pointer-events: auto; position: relative;
+        width: 168px; height: 168px; touch-action: none;
+    }
+    #stick-base {
+        position: absolute; left: 14px; bottom: 14px;
+        width: 140px; height: 140px; border-radius: 50%;
+        background: rgba(255,255,255,.07);
+        border: 2px solid rgba(255,255,255,.22);
+    }
+    #stick-knob {
+        position: absolute; width: 58px; height: 58px; border-radius: 50%;
+        left: 55px; bottom: 55px;
+        background: rgba(255,255,255,.4); border: 2px solid rgba(255,255,255,.6);
+        transform: translate(0,0);
+    }
+    #buttons {
+        pointer-events: auto; position: relative;
+        width: 258px; height: 190px; touch-action: none;
+    }
+    .btn {
+        position: absolute;
+        width: var(--bs); height: var(--bs); border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 19px; letter-spacing: .5px;
+        border: 2px solid rgba(255,255,255,.5); color: #fff;
+        background: rgba(255,255,255,.12);
+    }
+    #buttons { --bs: 64px; --alt: 50px; }
+    .btn.p { background: rgba(90,150,255,.32); }
+    .btn.k { background: rgba(255,110,90,.32); }
+    .btn.alt { width: var(--alt); height: var(--alt); font-size: 13px; opacity: .82; }
+    .btn.held { background: rgba(255,255,255,.8) !important; color: #111; transform: scale(.93); }
+
+    /* Diamond: Y on top, X left, B right, A bottom. */
+    #btn-y  { left: 66px; top: 0; }
+    #btn-x  { left: 0;    top: 62px; }
+    #btn-b  { left: 132px; top: 62px; }
+    #btn-a  { left: 66px; top: 124px; }
+    #btn-mp { left: 200px; top: 26px; }
+    #btn-mk { left: 200px; top: 88px; }
+
+    /* These are JS-driven classes rather than media queries on purpose. A media
+       query measures the viewport, but once the stage is rotated the space the
+       pad actually has is the stage's own box. Keying off the viewport would
+       give an upright phone the cramped layout despite the stage rendering
+       844px wide, and the controls would rearrange every time the player
+       turned the device. */
+
+    /* Short stage (most phones held sideways): shrink so the pad never crowds
+       the fighters or runs past the edge. */
+    #stage.compact #buttons { --bs: 55px; --alt: 44px; width: 226px; height: 166px; }
+    #stage.compact #btn-y  { left: 57px;  top: 0; }
+    #stage.compact #btn-x  { left: 0;     top: 54px; }
+    #stage.compact #btn-b  { left: 114px; top: 54px; }
+    #stage.compact #btn-a  { left: 57px;  top: 108px; }
+    #stage.compact #btn-mp { left: 174px; top: 22px; }
+    #stage.compact #btn-mk { left: 174px; top: 76px; }
+    #stage.compact #stick-zone { width: 140px; height: 140px; }
+    #stage.compact #stick-base { width: 116px; height: 116px; left: 12px; bottom: 12px; }
+    #stage.compact #stick-knob { width: 50px; height: 50px; left: 45px; bottom: 45px; }
+
+    /* Too narrow to fit the stick, the diamond and the two extras side by side.
+       Drop the secondary MP/MK rather than let them run off the edge -- the
+       A/B/X/Y diamond is what has to stay reachable. */
+    #stage.no-alt .btn.alt { display: none; }
+    #stage.no-alt #buttons { width: 169px; }
+
+    /* ---------- Menus ---------- */
+    .screen {
+        position: absolute; inset: 0; background: rgba(9,10,15,.94);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 14px; padding: 20px; overflow-y: auto; z-index: 20;
+    }
+    .screen.hidden { display: none; }
+    .title { font-size: 34px; font-weight: 800; letter-spacing: 4px; }
+    .subtitle { font-size: 12px; opacity: .55; letter-spacing: 2px; margin-top: -10px; }
+    .prompt { font-size: 12px; opacity: .65; letter-spacing: 1px; }
+    .styles { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; max-width: 760px; }
+    .card {
+        width: 138px; padding: 10px 12px; border-radius: 8px; cursor: pointer;
+        background: #171923; border: 2px solid #2a2e3d; transition: .12s;
+    }
+    .card:active { transform: scale(.97); }
+    .card.sel { border-color: #ffd34a; background: #23273a; }
+    .card h3 { margin: 0 0 2px; font-size: 15px; letter-spacing: 1px; }
+    .card .tag { font-size: 10px; opacity: .6; text-transform: uppercase; letter-spacing: 1px; }
+    .card .stats { margin-top: 7px; display: flex; flex-direction: column; gap: 3px; }
+    .stat { display: flex; align-items: center; gap: 5px; font-size: 9px; opacity: .8; }
+    .stat span { width: 26px; }
+    .stat i { flex: 1; height: 3px; background: #2f3547; display: block; }
+    .stat i b { display: block; height: 100%; background: #7ec8ff; }
+    .go {
+        margin-top: 6px; padding: 12px 40px; font-size: 16px; font-weight: 800; letter-spacing: 3px;
+        background: #ffd34a; color: #14161d; border: none; border-radius: 6px; cursor: pointer;
+    }
+    .go:active { transform: scale(.97); }
+    .movelist {
+        max-width: 620px; font-size: 11px; line-height: 1.75; opacity: .8;
+        display: grid; grid-template-columns: auto 1fr; gap: 2px 14px;
+    }
+    .movelist b { color: #ffd34a; font-weight: 700; white-space: nowrap; }
+    .hint { font-size: 10px; opacity: .45; text-align: center; max-width: 520px; line-height: 1.6; }
+</style>
 </head>
 <body>
 
-    <canvas id="gameCanvas" width="1280" height="720"></canvas>
-    
-    <div id="hud">
-        <div style="width: 40%;">
-            <div class="player-name">P1: YOU</div>
-            <div class="health-bar-container"><div id="p1-health" class="health-fill"></div></div>
-            <div id="p1-sp-cd" class="cd-bar"></div>
-        </div>
-        <div style="width: 40%; text-align: right;">
-            <div class="player-name">P2: DUMMY</div>
-            <div class="health-bar-container"><div id="p2-health" class="health-fill"></div></div>
-        </div>
-    </div>
+<div id="stage">
+    <canvas id="gameCanvas"></canvas>
 
-    <div id="ui-layer">
-        <div id="joystick-zone" class="control-group">
-            <div id="joy-base">
-                <div id="joy-stick"></div>
+    <div id="hud">
+        <div class="side left">
+            <div class="name-row"><span class="fname" id="p1-name">P1</span><span class="fstyle" id="p1-style"></span></div>
+            <div class="bar"><div class="ghost" id="p1-ghost"></div><div class="fill" id="p1-health"></div></div>
+            <div class="bar guard"><div class="fill" id="p1-guard"></div></div>
+            <div class="meter" id="p1-meter-wrap"><div class="fill" id="p1-meter"></div></div>
+        </div>
+        <div id="center-hud">
+            <div id="timer">99</div>
+            <div id="rounds">
+                <div class="pips" id="p1-pips"></div>
+                <div class="pips" id="p2-pips"></div>
             </div>
         </div>
-        <div id="action-buttons" class="control-group">
-            <div class="action-btn" id="btn-pj" data-key="pj">PJ</div>
-            <div class="action-btn" id="btn-y" data-key="y">Y</div>
-            <div class="action-btn" id="btn-x" data-key="x">X</div>
-            <div class="action-btn" id="btn-b" data-key="b">B</div>
-            <div class="action-btn" id="btn-a" data-key="a">A</div>
-            <div class="action-btn" id="btn-special" data-key="special">SP</div>
+        <div class="side right">
+            <div class="name-row"><span class="fname" id="p2-name">CPU</span><span class="fstyle" id="p2-style"></span></div>
+            <div class="bar"><div class="ghost" id="p2-ghost"></div><div class="fill" id="p2-health"></div></div>
+            <div class="bar guard"><div class="fill" id="p2-guard"></div></div>
+            <div class="meter" id="p2-meter-wrap"><div class="fill" id="p2-meter"></div></div>
         </div>
     </div>
 
+    <div id="combo-p1"><div class="combo-n"></div><div class="combo-l">HITS</div></div>
+    <div id="combo-p2"><div class="combo-n"></div><div class="combo-l">HITS</div></div>
+    <div id="announce"></div>
+
+    <div id="controls" class="hidden">
+        <div id="stick-zone">
+            <div id="stick-base"></div>
+            <div id="stick-knob"></div>
+        </div>
+        <!-- Gamepad diamond: X/Y are punches, A/B are kicks, which is the
+             standard fighting-game pad layout. MP/MK sit off to the side so the
+             full six-attack moveset is still reachable on a touchscreen. -->
+        <div id="buttons">
+            <div class="btn p" id="btn-y" data-btn="HP">Y</div>
+            <div class="btn p" id="btn-x" data-btn="LP">X</div>
+            <div class="btn k" id="btn-b" data-btn="HK">B</div>
+            <div class="btn k" id="btn-a" data-btn="LK">A</div>
+            <div class="btn p alt" id="btn-mp" data-btn="MP">MP</div>
+            <div class="btn k alt" id="btn-mk" data-btn="MK">MK</div>
+        </div>
+    </div>
+
+    <div class="screen" id="select-screen">
+        <div class="title">SMALL FIGHTER</div>
+        <div class="subtitle">STICKMAN VERSUS</div>
+        <div class="prompt">CHOOSE YOUR STYLE</div>
+        <div class="styles" id="style-cards"></div>
+        <button class="go" id="start-btn">FIGHT</button>
+        <div class="movelist" id="movelist"></div>
+        <div class="hint">
+            Touch: stick to move, X/Y punch, A/B kick, MP/MK for medium attacks.<br>
+            Keyboard: A/D move &middot; W jump &middot; S crouch &middot; hold back to block &middot;
+            U/I/O = light/medium/heavy punch &middot; J/K/L = light/medium/heavy kick &middot;
+            double-tap forward to run
+        </div>
+    </div>
+</div>
+
 <script>
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+"use strict";
+/* =====================================================================
+   SMALL FIGHTER
+   A side-view stickman versus fighter.
 
-const GRAVITY = 0.8;
-const GROUND_Y = 650;
+   Mechanics ported in concept from Project F's F.LF (open-source LF2):
+     - combo decoder: a timed key-sequence buffer that fires named motions
+     - per-style stat blocks (walk/run/dash speeds) like LF2's `bmp` data
+     - locomotion state machine: stand / walk / run / dash / stop_running
+     - hit resolution with dvx/dvy knockback, chip damage on block,
+       and an accumulating `fall` value that decides knockdown
+   Animation is fully procedural: gait phase driven by distance travelled
+   plus 2-bone IK on the legs, so feet plant instead of skating.
+   ===================================================================== */
+
+/* ------------------------------------------------------------------ */
+/* Config                                                              */
+/* ------------------------------------------------------------------ */
+const VIEW = { w: 1280, h: 720 };
 const FPS = 60;
+const DT = 1000 / FPS;
 
-const input = { a: false, b: false, x: false, y: false, special: false, pj: false };
-const joystick = { x: 0, y: 0, active: false };
-
-// Visual Effects & Projectiles Stores
-const hitEffects = [];
-const projectiles = [];
-
-function spawnHitEffect(x, y) {
-    hitEffects.push({ x: x, y: y, life: FPS, maxLife: FPS });
-}
-
-class Projectile {
-    constructor(x, y, dir, ownerId) {
-        this.x = x;
-        this.y = y;
-        this.vx = dir * 12;
-        this.ownerId = ownerId;
-        this.active = true;
-        this.radius = 10;
-    }
-    update() {
-        this.x += this.vx;
-        if (this.x < 0 || this.x > canvas.width) this.active = false;
-    }
-    draw(ctx) {
-        ctx.fillStyle = '#00ffff';
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
-        ctx.fill();
-    }
-}
-
-const joyZone = document.getElementById('joystick-zone');
-const joyStick = document.getElementById('joy-stick');
-const joyBase = document.getElementById('joy-base');
-const maxRadius = 45;
-
-function handleJoy(e) {
-    e.preventDefault();
-    if (e.type === 'touchend' || e.type === 'mouseup') {
-        joystick.active = false;
-        joystick.x = 0; joystick.y = 0;
-        joyStick.style.transform = `translate(-50%, -50%)`;
-        return;
-    }
-    joystick.active = true;
-    let clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    let clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    let rect = joyBase.getBoundingClientRect();
-    
-    let centerX = rect.left + rect.width / 2;
-    let centerY = rect.top + rect.height / 2;
-    
-    let dx = clientX - centerX;
-    let dy = clientY - centerY;
-    let distance = Math.sqrt(dx * dx + dy * dy);
-    
-    if (distance > maxRadius) {
-        dx = (dx / distance) * maxRadius;
-        dy = (dy / distance) * maxRadius;
-    }
-    
-    joyStick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-    joystick.x = dx / maxRadius;
-    joystick.y = dy / maxRadius;
-}
-
-joyZone.addEventListener('touchstart', handleJoy, {passive: false});
-joyZone.addEventListener('touchmove', handleJoy, {passive: false});
-joyZone.addEventListener('touchend', handleJoy, {passive: false});
-joyZone.addEventListener('mousedown', handleJoy);
-document.addEventListener('mousemove', (e) => { if (joystick.active) handleJoy(e); });
-document.addEventListener('mouseup', handleJoy);
-
-document.querySelectorAll('.action-btn').forEach(btn => {
-    const press = (e) => { e.preventDefault(); input[btn.dataset.key] = true; };
-    const release = (e) => { e.preventDefault(); input[btn.dataset.key] = false; };
-    btn.addEventListener('touchstart', press);
-    btn.addEventListener('mousedown', press);
-    btn.addEventListener('touchend', release);
-    btn.addEventListener('mouseup', release);
-    btn.addEventListener('mouseleave', release);
-});
-
-window.addEventListener('keydown', (e) => {
-    switch(e.key.toLowerCase()) {
-        case 'j': input.a = true; break;
-        case 'k': input.b = true; break;
-        case 'u': input.x = true; break;
-        case 'i': input.y = true; break;
-        case 'o': input.pj = true; break;
-        case ' ': input.special = true; break;
-        case 'w': joystick.y = -1; break;
-        case 's': joystick.y = 1; break;
-        case 'a': joystick.x = -1; break;
-        case 'd': joystick.x = 1; break;
-    }
-});
-window.addEventListener('keyup', (e) => {
-    switch(e.key.toLowerCase()) {
-        case 'j': input.a = false; break;
-        case 'k': input.b = false; break;
-        case 'u': input.x = false; break;
-        case 'i': input.y = false; break;
-        case 'o': input.pj = false; break;
-        case ' ': input.special = false; break;
-        case 'w': case 's': joystick.y = 0; break;
-        case 'a': case 'd': joystick.x = 0; break;
-    }
-});
-
-function lerp(start, end, amt) { return (1 - amt) * start + amt * end; }
-function toRad(deg) { return deg * Math.PI / 180; }
-
-const DEFAULT_POSE = {
-    lShoulder: -80, lElbow: -70,
-    rShoulder: -30, rElbow: -90,
-    lHip: -30, lKnee: 40,
-    rHip: 20, rKnee: 30,
-    trunkTilt: 10
+const CFG = {
+    gravity: 0.95,
+    groundY: 560,           // world Y of the floor line
+    friction: 0.55,         // ground friction per frame
+    airFriction: 0.015,
+    minSpeed: 0.22,         // below this, horizontal velocity snaps to 0
+    stageHalf: 900,         // stage extends +/- this from centre
+    pushRadius: 88,         // fighters push each other apart within this
+    fallKO: 55,             // accumulated fall value that causes a knockdown
+    fallRecover: 0.55,      // fall value bled off per frame while neutral
+    guardRecover: 0.22,     // guard meter regained per frame
+    chipFactor: 0.1,        // portion of damage that gets through a block
+    meterOnDeal: 1.1,       // super meter per point of damage dealt
+    meterOnTake: 1.6,
+    meterOnBlock: 0.5,
+    roundTime: 99,
+    roundsToWin: 2
 };
 
-class HumanoidFighter {
-    constructor(x, id, color, isAI = false) {
-        this.id = id;
-        this.isAI = isAI;
-        this.x = x;
-        this.y = GROUND_Y;
-        this.vx = 0;
-        this.vy = 0;
-        this.hp = 100;
-        this.maxHp = 100;
-        this.color = color;
-        this.facingRight = (id === 'P1');
-        
-        this.sizes = {
-            head: 15, trunkH: 60,
-            upperArm: 35, lowerArm: 35, 
-            upperLeg: 40, lowerLeg: 40
-        };
+// Damage scaling through a combo, so long strings do not delete a health bar.
+const SCALING = [1, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.42, 0.35, 0.3, 0.25];
 
-        this.pose = { ...DEFAULT_POSE };
-        this.targetPose = { ...DEFAULT_POSE };
-        this.globalRotation = 0; 
-        
-        this.state = 'idle';
-        this.stateTimer = 0;
-        this.hasHit = false; 
-        
-        this.spCooldown = 0;
-        this.spMaxCooldown = FPS * 5; 
-        this.pjCooldown = 0;
-        this.pjMaxCooldown = Math.floor(FPS * 1.5); 
-        
-        this.limbs = { lHand: {x:0,y:0}, rHand: {x:0,y:0}, lFoot: {x:0,y:0}, rFoot: {x:0,y:0} };
-        this.bodyBox = { x: 0, y: 0, w: 0, h: 0 };
+/* ------------------------------------------------------------------ */
+/* Math helpers                                                        */
+/* ------------------------------------------------------------------ */
+const RAD = Math.PI / 180;
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+const sign = v => v < 0 ? -1 : 1;
+const rand = (a, b) => a + Math.random() * (b - a);
+
+// Shortest-path angular interpolation, keeps limbs from spinning the long way.
+function lerpAngle(a, b, t) {
+    let d = (b - a) % 360;
+    if (d > 180) d -= 360;
+    if (d < -180) d += 360;
+    return a + d * t;
+}
+
+// Squared distance from point P to segment AB, used for capsule hurtboxes.
+function distPointSeg(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    let t = len2 === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / len2;
+    t = clamp(t, 0, 1);
+    const cx = ax + dx * t, cy = ay + dy * t;
+    return Math.hypot(px - cx, py - cy);
+}
+
+/* ------------------------------------------------------------------ */
+/* Combo decoder  (concept from F.LF core/combodec.js)                 */
+/*                                                                     */
+/* Records a facing-relative input sequence and matches it against a   */
+/* motion table. Directions are numpad notation, which is what every   */
+/* fighting game uses:   7 8 9                                         */
+/*                       4 5 6   6 = toward the opponent               */
+/*                       1 2 3                                         */
+/* ------------------------------------------------------------------ */
+class ComboDec {
+    constructor(opts = {}) {
+        this.seq = [];              // [{k, t}]
+        this.time = 0;
+        this.bufferFrames = opts.bufferFrames || 22;   // how long an entry lives
+        this.leniency = opts.leniency || 14;           // max span of one motion
+    }
+    // Feed a direction change or a button press. Repeats are dropped.
+    push(k) {
+        const last = this.seq[this.seq.length - 1];
+        if (last && last.k === k && this.time - last.t < 2) return;
+        this.seq.push({ k, t: this.time });
+    }
+    frame() {
+        this.time++;
+        while (this.seq.length && this.time - this.seq[0].t > this.bufferFrames) this.seq.shift();
+    }
+    clear() { this.seq.length = 0; }
+
+    /* Match a motion (array of direction keys) that ends within `within`
+       frames of now, allowing unrelated entries to be skipped over so that
+       sloppy inputs still register -- the same forgiveness real games use. */
+    match(motion, within = 6) {
+        let mi = motion.length - 1;
+        let lastT = null;
+        for (let i = this.seq.length - 1; i >= 0 && mi >= 0; i--) {
+            const e = this.seq[i];
+            if (e.k !== motion[mi]) continue;
+            if (lastT !== null && lastT - e.t > this.leniency) return false;
+            if (mi === motion.length - 1 && this.time - e.t > within) return false;
+            lastT = e.t;
+            mi--;
+        }
+        return mi < 0;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Input                                                               */
+/*                                                                     */
+/* Both keyboard and touch resolve into the same shape: a raw stick     */
+/* vector plus six attack buttons, which the fighter reads each frame.  */
+/* ------------------------------------------------------------------ */
+const BUTTONS = ["LP", "MP", "HP", "LK", "MK", "HK"];
+
+class InputSource {
+    constructor() {
+        this.x = 0; this.y = 0;                  // stick, -1..1  (y+ is down)
+        this.btn = {}; this.pressed = {};        // held / edge-triggered
+        BUTTONS.forEach(b => { this.btn[b] = false; this.pressed[b] = false; });
+    }
+    press(b) { if (!this.btn[b]) this.pressed[b] = true; this.btn[b] = true; }
+    release(b) { this.btn[b] = false; }
+    // Called once per simulation frame after the fighter has read the state.
+    endFrame() { BUTTONS.forEach(b => this.pressed[b] = false); }
+}
+
+const P1_INPUT = new InputSource();
+
+// True while the stage is turned a quarter turn to force landscape. Read by the
+// touch handler to map finger movement back into the game's frame of reference.
+let ROTATED = false;
+
+/* Keyboard ---------------------------------------------------------- */
+const KEYMAP = {
+    a: "left", d: "right", w: "up", s: "down",
+    arrowleft: "left", arrowright: "right", arrowup: "up", arrowdown: "down",
+    u: "LP", i: "MP", o: "HP", j: "LK", k: "MK", l: "HK"
+};
+const keyState = { left: false, right: false, up: false, down: false };
+
+function applyKeyboardStick() {
+    P1_INPUT.x = (keyState.right ? 1 : 0) - (keyState.left ? 1 : 0);
+    P1_INPUT.y = (keyState.down ? 1 : 0) - (keyState.up ? 1 : 0);
+}
+window.addEventListener("keydown", e => {
+    const m = KEYMAP[e.key.toLowerCase()];
+    if (!m) return;
+    e.preventDefault();
+    if (m in keyState) { keyState[m] = true; applyKeyboardStick(); }
+    else P1_INPUT.press(m);
+});
+window.addEventListener("keyup", e => {
+    const m = KEYMAP[e.key.toLowerCase()];
+    if (!m) return;
+    e.preventDefault();
+    if (m in keyState) { keyState[m] = false; applyKeyboardStick(); }
+    else P1_INPUT.release(m);
+});
+
+/* Touch -- pointer based so multitouch works (stick + buttons at once) */
+function initTouch() {
+    const zone = document.getElementById("stick-zone");
+    const base = document.getElementById("stick-base");
+    const knob = document.getElementById("stick-knob");
+    let stickId = null;
+
+    function moveStick(e) {
+        const r = base.getBoundingClientRect();
+        // Derive the throw from the rendered size so the stick still feels the
+        // same after the small-landscape media query shrinks it. A rotated
+        // circle's bounding box is still square and still centred on the
+        // circle, so this stays correct in forced-landscape mode.
+        const maxr = r.width * 0.37;
+        const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        let dx = e.clientX - cx, dy = e.clientY - cy;
+        // Pointer coordinates are always screen-space. When the stage is turned
+        // a quarter turn, rotate the finger vector back into the game's frame
+        // or the stick would drive the fighter sideways to what the player sees.
+        if (ROTATED) { const t = dx; dx = dy; dy = -t; }
+        const d = Math.hypot(dx, dy);
+        if (d > maxr) { dx = dx / d * maxr; dy = dy / d * maxr; }
+        knob.style.transform = `translate(${dx}px, ${dy}px)`;
+        // Normalise against a smaller radius so the stick reaches full tilt
+        // before the knob hits the rim -- otherwise corners feel unreachable.
+        P1_INPUT.x = clamp(dx / (maxr * 0.62), -1, 1);
+        P1_INPUT.y = clamp(dy / (maxr * 0.62), -1, 1);
+    }
+    function resetStick() {
+        stickId = null;
+        knob.style.transform = "translate(0,0)";
+        P1_INPUT.x = 0; P1_INPUT.y = 0;
+    }
+    zone.addEventListener("pointerdown", e => {
+        e.preventDefault(); stickId = e.pointerId;
+        zone.setPointerCapture(e.pointerId); moveStick(e);
+    });
+    zone.addEventListener("pointermove", e => {
+        if (e.pointerId === stickId) { e.preventDefault(); moveStick(e); }
+    });
+    const up = e => { if (e.pointerId === stickId) { e.preventDefault(); resetStick(); } };
+    zone.addEventListener("pointerup", up);
+    zone.addEventListener("pointercancel", up);
+
+    document.querySelectorAll(".btn").forEach(el => {
+        const name = el.dataset.btn;
+        el.addEventListener("pointerdown", e => {
+            e.preventDefault(); el.classList.add("held");
+            el.setPointerCapture(e.pointerId); P1_INPUT.press(name);
+        });
+        const off = e => {
+            e.preventDefault(); el.classList.remove("held"); P1_INPUT.release(name);
+        };
+        el.addEventListener("pointerup", off);
+        el.addEventListener("pointercancel", off);
+    });
+
+    // Show the on-screen pad wherever there is a touchscreen. iPads reporting a
+    // fine pointer still have maxTouchPoints > 0, so check all three signals.
+    const touchy = window.matchMedia("(pointer: coarse)").matches
+        || "ontouchstart" in window
+        || navigator.maxTouchPoints > 0;
+    if (touchy) document.getElementById("controls").classList.remove("hidden");
+
+    // iOS Safari still pans and rubber-bands on drag unless the gesture is
+    // cancelled outright. The pad and canvas need every touch to stay put.
+    document.addEventListener("touchmove", e => e.preventDefault(), { passive: false });
+    // Suppress double-tap-to-zoom, which otherwise eats rapid button presses.
+    document.addEventListener("gesturestart", e => e.preventDefault());
+}
+
+/* ------------------------------------------------------------------ */
+/* Pose system                                                         */
+/*                                                                     */
+/* Every angle is degrees from straight-down, positive swinging FORWARD */
+/* (toward the way the fighter faces). Child joints are relative to     */
+/* their parent segment, and the signs follow real anatomy:             */
+/*                                                                     */
+/*   shoulder  0 = arm hanging   +90 = straight ahead   180 = overhead  */
+/*   elbow     0 = straight      POSITIVE = flexed (forearm comes up)   */
+/*   hip       0 = leg down      +90 = knee raised to horizontal        */
+/*   knee      0 = straight      NEGATIVE = flexed (heel toward seat)   */
+/*                                                                     */
+/* Getting those two signs right is the whole difference between a      */
+/* figure that reads as human and one whose joints bend backwards.      */
+/* ------------------------------------------------------------------ */
+const NEUTRAL = {
+    lean: 8, head: -6, pelvis: 0, crouch: 0,
+    lSh: 22, lEl: 104, rSh: 4, rEl: 122,
+    // Both knees carry enough flex that the FK fallback stance is no taller
+    // than the standing hip height -- otherwise the feet sink through the floor
+    // in any state that does not run IK or foot planting.
+    lHip: 24, lKn: -52, rHip: -18, rKn: -34
+};
+
+function blendPose(dst, src, t) {
+    for (const k in dst) {
+        if (src[k] === undefined) continue;
+        dst[k] = (k === "pelvis" || k === "crouch")
+            ? lerp(dst[k], src[k], t)
+            : lerpAngle(dst[k], src[k], t);
+    }
+}
+function poseFrom(base, over) { return Object.assign({}, base, over || {}); }
+
+/* ------------------------------------------------------------------ */
+/* Move definitions                                                    */
+/*                                                                     */
+/* Every attack is real frame data: startup / active / recovery, and a  */
+/* named joint that becomes the hitbox while active. `cancel` lists     */
+/* what the move can be cancelled into on hit, which is what produces   */
+/* Street Fighter style chain and special-cancel combos.                */
+/* ------------------------------------------------------------------ */
+const MOVES = {
+    /* ---- standing normals ---- */
+    LP: {
+        name: "Jab", startup: 4, active: 3, recovery: 7,
+        dmg: 22, hitstun: 13, blockstun: 9, kb: 3.2, fall: 6,
+        strike: "rHand", radius: 15, level: "high", meter: 1,
+        cancel: ["MP", "HP", "LK", "MK", "HK", "special"],
+        pose: {
+            // chamber: elbow back, fist held at the chest
+            s: { rSh: -22, rEl: 118, lSh: 26, lEl: 108, lean: 10 },
+            a: { rSh: 88, rEl: 6, lSh: 8, lEl: 118, lean: 16 },
+            r: { rSh: 30, rEl: 80, lSh: 22, lEl: 108, lean: 11 }
+        }
+    },
+    MP: {
+        name: "Straight", startup: 7, active: 3, recovery: 12,
+        dmg: 42, hitstun: 17, blockstun: 12, kb: 5, fall: 11,
+        strike: "lHand", radius: 16, level: "high", meter: 2,
+        cancel: ["HP", "HK", "special"],
+        pose: {
+            // rear-hand cross: the torso rotates through the punch
+            s: { lSh: -34, lEl: 128, rSh: 30, rEl: 96, lean: -4 },
+            a: { lSh: 92, lEl: 4, rSh: -20, rEl: 120, lean: 20 },
+            r: { lSh: 34, lEl: 84, rSh: 10, rEl: 112, lean: 10 }
+        }
+    },
+    HP: {
+        name: "Overhand", startup: 11, active: 4, recovery: 20,
+        dmg: 70, hitstun: 22, blockstun: 15, kb: 8.5, fall: 20, kbY: -3,
+        strike: "rHand", radius: 18, level: "high", meter: 3,
+        cancel: ["special"],
+        pose: {
+            // big wind-up behind the head, then a committed swing through
+            s: { rSh: -66, rEl: 130, lSh: 40, lEl: 96, lean: -14, pelvis: 3 },
+            a: { rSh: 104, rEl: 10, lSh: -30, lEl: 110, lean: 26, pelvis: -2 },
+            r: { rSh: 48, rEl: 76, lSh: 16, lEl: 104, lean: 14 }
+        }
+    },
+    LK: {
+        name: "Low Kick", startup: 5, active: 3, recovery: 9,
+        dmg: 26, hitstun: 14, blockstun: 10, kb: 3.6, fall: 7,
+        strike: "rFoot", radius: 16, level: "high", meter: 1,
+        cancel: ["MK", "HK", "MP", "HP", "special"],
+        pose: {
+            // chamber the knee first, then snap the shin out
+            s: { rHip: 44, rKn: -96, lHip: 6, lKn: -14, lean: 4 },
+            a: { rHip: 58, rKn: -8, lHip: 4, lKn: -12, lean: -8, pelvis: 4 },
+            r: { rHip: 34, rKn: -66, lHip: 6, lKn: -14, lean: 2 }
+        }
+    },
+    MK: {
+        name: "Round Kick", startup: 9, active: 4, recovery: 15,
+        dmg: 48, hitstun: 18, blockstun: 13, kb: 6, fall: 14,
+        strike: "rFoot", radius: 18, level: "high", meter: 2,
+        cancel: ["HK", "special"],
+        pose: {
+            s: { rHip: 40, rKn: -110, lHip: 8, lKn: -18, lean: -10, pelvis: 2 },
+            // arms counter-rotate to sell the hip turn
+            a: { rHip: 86, rKn: -14, lHip: 2, lKn: -10, lean: -18, pelvis: 2, lSh: 70, lEl: 60, rSh: -50, rEl: 70 },
+            r: { rHip: 36, rKn: -70, lHip: 6, lKn: -16, lean: -6 }
+        }
+    },
+    HK: {
+        name: "High Kick", startup: 13, active: 4, recovery: 22,
+        dmg: 78, hitstun: 24, blockstun: 16, kb: 10, fall: 26, kbY: -5,
+        strike: "rFoot", radius: 19, level: "high", meter: 3,
+        cancel: ["special"],
+        pose: {
+            s: { rHip: 46, rKn: -120, lHip: 10, lKn: -20, lean: -16, pelvis: 5 },
+            a: { rHip: 118, rKn: -6, lHip: 0, lKn: -8, lean: -28, pelvis: -4, lSh: 96, lEl: 40, rSh: -64, rEl: 60 },
+            r: { rHip: 40, rKn: -76, lHip: 8, lKn: -18, lean: -8, pelvis: 3 }
+        }
+    },
+
+    /* ---- crouching normals ---- */
+    cLP: {
+        name: "Crouch Jab", startup: 4, active: 3, recovery: 8,
+        dmg: 18, hitstun: 12, blockstun: 9, kb: 2.4, fall: 4,
+        strike: "rHand", radius: 14, level: "mid", meter: 1, crouch: true,
+        cancel: ["cMP", "cLK", "cHK", "special"],
+        pose: {
+            s: { rSh: -14, rEl: 120, crouch: 42 },
+            a: { rSh: 82, rEl: 8, crouch: 42 },
+            r: { rSh: 26, rEl: 88, crouch: 42 }
+        }
+    },
+    cMP: {
+        name: "Uppercut", startup: 8, active: 4, recovery: 16,
+        dmg: 46, hitstun: 20, blockstun: 13, kb: 4, fall: 30, kbY: -9, launcher: true,
+        strike: "rHand", radius: 17, level: "high", meter: 2, crouch: true,
+        cancel: ["special"],
+        pose: {
+            // fist starts low at the hip and finishes above the head line
+            s: { rSh: -30, rEl: 135, crouch: 46, lean: 8 },
+            a: { rSh: 122, rEl: 22, crouch: 12, lean: -10, lHip: 10, lKn: -18 },
+            r: { rSh: 50, rEl: 80, crouch: 32, lean: 2 }
+        }
+    },
+    cLK: {
+        name: "Low Jab Kick", startup: 5, active: 3, recovery: 9,
+        dmg: 20, hitstun: 13, blockstun: 9, kb: 2.6, fall: 5,
+        strike: "rFoot", radius: 15, level: "low", meter: 1, crouch: true,
+        cancel: ["cHK", "cMP", "special"],
+        pose: {
+            s: { rHip: 30, rKn: -80, crouch: 44 },
+            a: { rHip: 46, rKn: -16, crouch: 46 },
+            r: { rHip: 26, rKn: -60, crouch: 44 }
+        }
+    },
+    cHK: {
+        name: "Sweep", startup: 10, active: 4, recovery: 21,
+        dmg: 54, hitstun: 20, blockstun: 14, kb: 6, fall: 60, kbY: -4, knockdown: true,
+        strike: "rFoot", radius: 19, level: "low", meter: 2, crouch: true,
+        cancel: [],
+        pose: {
+            // drops low and scythes the leg out along the floor
+            s: { rHip: 24, rKn: -96, crouch: 52, lean: 8 },
+            a: { rHip: 84, rKn: -6, crouch: 70, lean: 24, lSh: 60, lEl: 40 },
+            r: { rHip: 30, rKn: -66, crouch: 56, lean: 12 }
+        }
+    },
+
+    /* ---- air normals ---- */
+    jP: {
+        name: "Jump Punch", startup: 5, active: 8, recovery: 6,
+        dmg: 40, hitstun: 18, blockstun: 12, kb: 4, fall: 12,
+        strike: "rHand", radius: 17, level: "overhead", meter: 2, air: true,
+        cancel: [],
+        pose: {
+            s: { rSh: -30, rEl: 120 },
+            a: { rSh: 70, rEl: 12, lean: 18 },
+            r: { rSh: 26, rEl: 84 }
+        }
+    },
+    jK: {
+        name: "Jump Kick", startup: 6, active: 10, recovery: 6,
+        dmg: 52, hitstun: 20, blockstun: 14, kb: 5.5, fall: 16,
+        strike: "rFoot", radius: 19, level: "overhead", meter: 2, air: true,
+        cancel: [],
+        pose: {
+            s: { rHip: 30, rKn: -84 },
+            a: { rHip: 72, rKn: -10, lHip: -24, lKn: -70, lean: 10 },
+            r: { rHip: 26, rKn: -60 }
+        }
+    }
+};
+
+/* ------------------------------------------------------------------ */
+/* Fighting styles                                                     */
+/*                                                                     */
+/* The stat block mirrors LF2's `bmp` section (walking_speed,           */
+/* running_speed, jump_height ...) which is exactly how LF2 gives each  */
+/* character a distinct feel. Each style then owns three specials.      */
+/* Motions are numpad: 236 = quarter-circle forward, 623 = dragon punch */
+/* ------------------------------------------------------------------ */
+const STYLES = {
+    karate: {
+        name: "Karate", tag: "All-round", color: "#4aa3ff", accent: "#bfe0ff",
+        hp: 1000, defense: 1.0, weight: 1.0,
+        walkSpeed: 3.2, backSpeed: 2.5, runSpeed: 7.4, dashSpeed: 11,
+        jumpV: -17.5, jumpX: 5.2, stride: 78, runStride: 130,
+        specials: {
+            fireball: {
+                motion: [2, 3, 6], btns: ["LP", "MP", "HP"],
+                name: "Energy Palm", startup: 11, active: 4, recovery: 24,
+                dmg: 0, projectile: { speed: 11, dmg: 60, hitstun: 22, kb: 7, fall: 18, radius: 15 },
+                meter: 4, level: "high",
+                pose: {
+                    // both palms drawn to the hip, then thrust forward together
+                    s: { lSh: -46, lEl: 130, rSh: -40, rEl: 138, lean: -12, crouch: 20 },
+                    a: { lSh: 84, lEl: 8, rSh: 78, rEl: 12, lean: 20, crouch: 10 },
+                    r: { lSh: 44, lEl: 70, rSh: 40, rEl: 76, lean: 10, crouch: 14 }
+                }
+            },
+            dp: {
+                motion: [6, 2, 3], btns: ["LP", "MP", "HP"],
+                name: "Rising Fist", startup: 4, active: 10, recovery: 26,
+                dmg: 96, hitstun: 26, blockstun: 14, kb: 5, fall: 60, kbY: -13,
+                strike: "rHand", radius: 21, level: "high", meter: 4,
+                invuln: [0, 8], launcher: true, knockdown: true,
+                move: { x: 4.5, y: -15.5 }, airborne: true,
+                pose: {
+                    // corkscrew rise: fist finishes above the head
+                    s: { rSh: -40, rEl: 128, crouch: 40, lean: -10 },
+                    a: { rSh: 138, rEl: 16, lSh: -30, lEl: 110, crouch: -8, lean: -12, rHip: 30, rKn: -60 },
+                    r: { rSh: 50, rEl: 76, crouch: 0, lean: 4 }
+                }
+            },
+            spinkick: {
+                motion: [2, 1, 4], btns: ["LK", "MK", "HK"],
+                name: "Hurricane Kick", startup: 8, active: 16, recovery: 20,
+                dmg: 30, hitstun: 16, blockstun: 12, kb: 3, fall: 12,
+                strike: "rFoot", radius: 20, level: "high", meter: 4,
+                multihit: 5, legSpin: 30, move: { x: 6.5, y: -8 }, airborne: true,
+                pose: {
+                    s: { rHip: 36, rKn: -100, crouch: 30 },
+                    a: { rHip: 92, rKn: -8, lHip: -34, lKn: -50, lSh: 84, lEl: 30, rSh: -70, rEl: 40, lean: 0 },
+                    r: { rHip: 30, rKn: -64, crouch: 10 }
+                }
+            }
+        }
+    },
+
+    muaythai: {
+        name: "Muay Thai", tag: "Heavy hitter", color: "#e2564a", accent: "#ffc9c2",
+        hp: 1050, defense: 0.92, weight: 1.1,
+        walkSpeed: 2.9, backSpeed: 2.2, runSpeed: 6.6, dashSpeed: 9.5,
+        jumpV: -16.6, jumpX: 4.4, stride: 74, runStride: 122,
+        dmgMul: 1.18,
+        specials: {
+            teep: {
+                motion: [2, 3, 6], btns: ["LK", "MK", "HK"],
+                name: "Push Kick", startup: 10, active: 5, recovery: 20,
+                dmg: 58, hitstun: 18, blockstun: 16, kb: 14, fall: 24,
+                strike: "rFoot", radius: 19, level: "high", meter: 4,
+                move: { x: 2.5, y: 0 },
+                pose: {
+                    // knee chambers high, then the leg spears straight out
+                    s: { rHip: 48, rKn: -112, crouch: 26, lean: -14 },
+                    a: { rHip: 82, rKn: -4, lean: -26, crouch: 6, lSh: 70, lEl: 50, rSh: -56, rEl: 60 },
+                    r: { rHip: 34, rKn: -70, crouch: 16, lean: -8 }
+                }
+            },
+            knee: {
+                motion: [6, 2, 3], btns: ["LK", "MK", "HK"],
+                name: "Flying Knee", startup: 6, active: 12, recovery: 24,
+                dmg: 92, hitstun: 24, blockstun: 15, kb: 6, fall: 60, kbY: -11,
+                strike: "rKnee", radius: 20, level: "high", meter: 4,
+                invuln: [0, 6], knockdown: true, launcher: true,
+                move: { x: 8, y: -14 }, airborne: true,
+                pose: {
+                    // thigh drives up while the knee folds tight -- the strike
+                    // point is the knee itself, not the foot
+                    s: { rHip: 34, rKn: -84, crouch: 34 },
+                    a: { rHip: 96, rKn: -128, lHip: -34, lKn: -40, lean: 16, lSh: 56, lEl: 70, rSh: 40, rEl: 80 },
+                    r: { rHip: 30, rKn: -62, crouch: 10 }
+                }
+            },
+            elbow: {
+                motion: [2, 1, 4], btns: ["LP", "MP", "HP"],
+                name: "Elbow Rush", startup: 9, active: 6, recovery: 22,
+                dmg: 74, hitstun: 22, blockstun: 14, kb: 7, fall: 30, kbY: -4,
+                strike: "rElbow", radius: 19, level: "high", meter: 4,
+                move: { x: 9, y: 0 },
+                pose: {
+                    // arm stays folded so the elbow point leads the strike
+                    s: { rSh: -46, rEl: 140, lean: -12 },
+                    a: { rSh: 46, rEl: 132, lean: 26, lSh: 30, lEl: 110 },
+                    r: { rSh: 24, rEl: 100, lean: 10 }
+                }
+            }
+        }
+    },
+
+    boxer: {
+        name: "Boxer", tag: "Fast hands", color: "#ffb43a", accent: "#ffe6b0",
+        hp: 950, defense: 1.05, weight: 0.95,
+        walkSpeed: 3.6, backSpeed: 3.0, runSpeed: 8.2, dashSpeed: 12.5,
+        jumpV: -16.2, jumpX: 4.8, stride: 72, runStride: 120,
+        speedMul: 0.86,     // all normals recover faster
+        specials: {
+            dashpunch: {
+                motion: [4, 6], btns: ["LP", "MP", "HP"],
+                name: "Dash Straight", startup: 9, active: 5, recovery: 22,
+                dmg: 78, hitstun: 22, blockstun: 15, kb: 11, fall: 34, kbY: -3,
+                strike: "lHand", radius: 19, level: "high", meter: 4,
+                move: { x: 13, y: 0 },
+                pose: {
+                    s: { lSh: -48, lEl: 134, rSh: 24, rEl: 100, lean: -10, crouch: 24 },
+                    a: { lSh: 94, lEl: 4, rSh: -22, rEl: 120, lean: 30, crouch: 18 },
+                    r: { lSh: 38, lEl: 82, lean: 12, crouch: 10 }
+                }
+            },
+            uppercut: {
+                motion: [6, 2, 3], btns: ["LP", "MP", "HP"],
+                name: "Smash Upper", startup: 5, active: 8, recovery: 24,
+                dmg: 88, hitstun: 24, blockstun: 14, kb: 4, fall: 60, kbY: -12,
+                strike: "rHand", radius: 20, level: "high", meter: 4,
+                invuln: [0, 7], launcher: true, knockdown: true,
+                move: { x: 3.5, y: -13 }, airborne: true,
+                pose: {
+                    s: { rSh: -38, rEl: 132, crouch: 44, lean: -12 },
+                    a: { rSh: 128, rEl: 20, lSh: -34, lEl: 116, crouch: -6, lean: -10 },
+                    r: { rSh: 48, rEl: 78, crouch: 4 }
+                }
+            },
+            weave: {
+                motion: [2, 1, 4], btns: ["LK", "MK", "HK"],
+                name: "Weave Hook", startup: 12, active: 4, recovery: 18,
+                dmg: 66, hitstun: 20, blockstun: 13, kb: 6, fall: 26,
+                strike: "rHand", radius: 18, level: "high", meter: 4,
+                invuln: [2, 10],    // ducks under high attacks on the way in
+                move: { x: 5, y: 0 },
+                pose: {
+                    // ducks under the punch, then comes up with a bent-arm hook
+                    s: { crouch: 62, lean: 24, rSh: -40, rEl: 128, lSh: 30, lEl: 110 },
+                    a: { crouch: 20, lean: -8, rSh: 74, rEl: 46, lSh: -20, lEl: 118 },
+                    r: { crouch: 26, lean: 6, rSh: 30, rEl: 86 }
+                }
+            }
+        }
+    },
+
+    capoeira: {
+        name: "Capoeira", tag: "Acrobatic", color: "#54d98c", accent: "#c6f5da",
+        hp: 930, defense: 1.02, weight: 0.9,
+        walkSpeed: 3.5, backSpeed: 3.2, runSpeed: 8.6, dashSpeed: 13,
+        jumpV: -18.4, jumpX: 6.0, stride: 82, runStride: 140,
+        specials: {
+            helicopter: {
+                motion: [2, 1, 4], btns: ["LK", "MK", "HK"],
+                name: "Meia Lua", startup: 7, active: 18, recovery: 22,
+                dmg: 26, hitstun: 15, blockstun: 11, kb: 3, fall: 10,
+                strike: "rFoot", radius: 21, level: "high", meter: 4,
+                multihit: 6, legSpin: 34, move: { x: 5.5, y: -10 }, airborne: true,
+                pose: {
+                    s: { rHip: 40, rKn: -108, crouch: 34, lean: -10 },
+                    a: { rHip: 104, rKn: -12, lHip: -42, lKn: -44, lSh: 92, lEl: 24, rSh: -80, rEl: 36, lean: 10 },
+                    r: { rHip: 32, rKn: -66, crouch: 12 }
+                }
+            },
+            sweepkick: {
+                motion: [2, 3, 6], btns: ["LK", "MK", "HK"],
+                name: "Rasteira", startup: 9, active: 6, recovery: 20,
+                dmg: 58, hitstun: 20, blockstun: 14, kb: 6, fall: 60, kbY: -5,
+                strike: "rFoot", radius: 20, level: "low", meter: 4,
+                knockdown: true, move: { x: 8, y: 0 },
+                pose: {
+                    // drops onto a planted hand and scythes the far leg round
+                    s: { crouch: 70, lean: 26, rHip: 30, rKn: -96, lSh: 96, lEl: 20 },
+                    a: { crouch: 84, lean: 40, rHip: 100, rKn: -8, lSh: 118, lEl: 8, rSh: 40, rEl: 60 },
+                    r: { crouch: 60, lean: 20, rHip: 28, rKn: -62 }
+                }
+            },
+            cartwheel: {
+                motion: [6, 2, 3], btns: ["LP", "MP", "HP"],
+                name: "Au Batido", startup: 5, active: 10, recovery: 22,
+                dmg: 84, hitstun: 24, blockstun: 14, kb: 5, fall: 60, kbY: -12,
+                strike: "rFoot", radius: 20, level: "high", meter: 4,
+                invuln: [0, 9], launcher: true, knockdown: true,
+                move: { x: 3, y: -14.5 }, airborne: true, spin: 18,
+                pose: {
+                    // goes inverted -- hands toward the floor, legs whipping over
+                    s: { crouch: 46, lean: 20, lSh: 84, lEl: 30 },
+                    a: { crouch: -6, lean: -20, rHip: 112, rKn: -8, lHip: -48, lKn: -30, lSh: 128, lEl: 10, rSh: 108, rEl: 16 },
+                    r: { crouch: 10, lean: 6 }
+                }
+            }
+        }
+    },
+
+    wrestler: {
+        name: "Wrestler", tag: "Grappler", color: "#b07dff", accent: "#e6d4ff",
+        hp: 1150, defense: 0.85, weight: 1.25,
+        walkSpeed: 2.6, backSpeed: 2.0, runSpeed: 6.0, dashSpeed: 9,
+        jumpV: -16.0, jumpX: 4.0, stride: 76, runStride: 118,
+        dmgMul: 1.25, speedMul: 1.12,   // hits harder, recovers slower
+        specials: {
+            charge: {
+                motion: [2, 3, 6], btns: ["LP", "MP", "HP"],
+                name: "Shoulder Charge", startup: 11, active: 8, recovery: 24,
+                dmg: 82, hitstun: 22, blockstun: 18, kb: 12, fall: 40, kbY: -5,
+                strike: "chest", radius: 24, level: "high", meter: 4,
+                armor: true,        // absorbs one hit on the way in
+                move: { x: 12, y: 0 },
+                pose: {
+                    // drops the shoulder and drives through with the whole torso
+                    s: { crouch: 40, lean: 30, lSh: -26, lEl: 100, rSh: -22, rEl: 106 },
+                    a: { crouch: 26, lean: 46, lSh: -52, lEl: 80, rSh: -48, rEl: 84, rHip: 36, rKn: -60 },
+                    r: { crouch: 16, lean: 20 }
+                }
+            },
+            lariat: {
+                motion: [6, 2, 3], btns: ["LP", "MP", "HP"],
+                name: "Rising Lariat", startup: 6, active: 12, recovery: 28,
+                dmg: 98, hitstun: 26, blockstun: 16, kb: 7, fall: 60, kbY: -11,
+                strike: "lHand", radius: 24, level: "high", meter: 4,
+                invuln: [0, 8], launcher: true, knockdown: true, spin: 20,
+                move: { x: 2.5, y: -13 }, airborne: true,
+                pose: {
+                    // both arms lock out horizontally and the body spins
+                    s: { crouch: 44, lSh: -60, lEl: 30, rSh: 56, rEl: 24 },
+                    a: { crouch: -4, lSh: 96, lEl: 0, rSh: -96, rEl: 0, lean: 0 },
+                    r: { crouch: 10, lSh: 24, lEl: 60, rSh: -20, rEl: 60 }
+                }
+            },
+            slam: {
+                motion: [2, 1, 4], btns: ["LK", "MK", "HK"],
+                name: "Ground Slam", startup: 14, active: 5, recovery: 26,
+                dmg: 90, hitstun: 24, blockstun: 18, kb: 5, fall: 60, kbY: -8,
+                strike: "rHand", radius: 26, level: "low", meter: 4,
+                knockdown: true, quake: 14,
+                pose: {
+                    // reaches overhead, then slams both fists into the floor
+                    s: { crouch: -14, lSh: 168, lEl: 12, rSh: 164, rEl: 14, lean: -18 },
+                    a: { crouch: 72, lSh: 58, lEl: 16, rSh: 54, rEl: 18, lean: 34 },
+                    r: { crouch: 46, lSh: 26, lEl: 70, rSh: 22, rEl: 74, lean: 16 }
+                }
+            }
+        }
+    }
+};
+
+/* ------------------------------------------------------------------ */
+/* Skeleton                                                            */
+/*                                                                     */
+/* Builds world-space joint positions from a pose. Because every joint  */
+/* ends up as a real coordinate, hitboxes and hurtboxes can be read     */
+/* straight off the pose -- a kick's hitbox genuinely sits on the foot. */
+/* ------------------------------------------------------------------ */
+const SEG = {
+    torso: 62, neck: 10, head: 15,
+    upperArm: 32, lowerArm: 32,
+    upperLeg: 42, lowerLeg: 42
+};
+
+class Skeleton {
+    constructor() {
+        this.j = {};   // joint name -> {x, y}
+        for (const n of ["pelvis", "chest", "neck", "head",
+            "lShoulder", "lElbow", "lHand", "rShoulder", "rElbow", "rHand",
+            "lHip", "lKnee", "lFoot", "rHip", "rKnee", "rFoot"]) {
+            this.j[n] = { x: 0, y: 0 };
+        }
     }
 
-    update(opponent) {
-        if (this.hp <= 0) {
-            if (this.state !== 'dead') {
-                this.state = 'dead';
-                this.vy = -6; 
-                this.vx = this.facingRight ? -4 : 4; 
+    /* Walk a limb chain. `ang` are cumulative from straight-down, positive
+       forward. Returns nothing; writes the joints in place. */
+    _chain(from, a1, l1, a2, l2, dir, n1, n2) {
+        const p = this.j[from];
+        const t1 = a1 * RAD;
+        const x1 = p.x + dir * Math.sin(t1) * l1;
+        const y1 = p.y + Math.cos(t1) * l1;
+        this.j[n1].x = x1; this.j[n1].y = y1;
+        const t2 = (a1 + a2) * RAD;
+        this.j[n2].x = x1 + dir * Math.sin(t2) * l2;
+        this.j[n2].y = y1 + Math.cos(t2) * l2;
+    }
+
+    /* Two-bone IK: place the end effector at (tx,ty) and solve the middle
+       joint. `bend` is +1 for a knee that folds backward. Returns the pair of
+       angles in the same convention the FK chain uses, so poses and IK can be
+       blended against each other. */
+    static ik(rx, ry, tx, ty, l1, l2, dir, bend) {
+        let dx = tx - rx, dy = ty - ry;
+        let d = Math.hypot(dx, dy);
+        const max = l1 + l2 - 0.01;
+        const min = Math.abs(l1 - l2) + 0.01;
+        if (d > max) { const s = max / d; dx *= s; dy *= s; d = max; }
+        if (d < min) { const s = min / (d || 0.0001); dx *= s; dy *= s; d = min; }
+        // Angle of the root->target line, measured from straight-down.
+        const base = Math.atan2(dir * dx, dy) / RAD;
+        const cosA = clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1);
+        const a = Math.acos(cosA) / RAD;
+        const a1 = base + bend * a;
+        // Interior angle at the middle joint, converted to a relative bend.
+        const cosB = clamp((l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2), -1, 1);
+        const a2 = -bend * (180 - Math.acos(cosB) / RAD);
+        return [a1, a2];
+    }
+
+    /* Build all joints. `pose` is the blended angle set, (x,y) the ground
+       position of the fighter, `dir` +1 facing right. */
+    build(pose, x, groundY, dir, spin) {
+        const j = this.j;
+        const legLen = SEG.upperLeg + SEG.lowerLeg;
+        // Standing hip height is deliberately short of full leg length: a locked
+        // straight leg can only touch the floor directly beneath the hip, so the
+        // IK could never plant a foot that is offset forward or back. Carrying a
+        // natural knee bend gives the solver the slack it needs.
+        const stand = legLen * 0.88;
+        // `crouch` lowers the pelvis; `pelvis` is the per-move vertical nudge.
+        const hipH = stand - pose.crouch * 0.62 + pose.pelvis;
+        j.pelvis.x = x;
+        j.pelvis.y = groundY - Math.max(20, hipH);
+
+        // Spin (helicopter kicks, lariats) rotates the whole body about the
+        // pelvis. Applied as a rotation of the accumulated angles.
+        const sp = spin || 0;
+
+        const lean = pose.lean + sp;
+        const t = lean * RAD;
+        j.chest.x = j.pelvis.x + dir * Math.sin(t) * SEG.torso;
+        j.chest.y = j.pelvis.y - Math.cos(t) * SEG.torso;
+
+        const nt = (lean + pose.head) * RAD;
+        j.neck.x = j.chest.x + dir * Math.sin(nt) * SEG.neck;
+        j.neck.y = j.chest.y - Math.cos(nt) * SEG.neck;
+        j.head.x = j.neck.x + dir * Math.sin(nt) * SEG.head;
+        j.head.y = j.neck.y - Math.cos(nt) * SEG.head;
+
+        j.lShoulder.x = j.chest.x; j.lShoulder.y = j.chest.y;
+        j.rShoulder.x = j.chest.x; j.rShoulder.y = j.chest.y;
+        // Arms hang from the chest; shoulder angles are absolute from down,
+        // so `lean` is added in to keep them attached to the torso frame.
+        this._chain("lShoulder", pose.lSh + lean, SEG.upperArm, pose.lEl, SEG.lowerArm, dir, "lElbow", "lHand");
+        this._chain("rShoulder", pose.rSh + lean, SEG.upperArm, pose.rEl, SEG.lowerArm, dir, "rElbow", "rHand");
+
+        j.lHip.x = j.pelvis.x; j.lHip.y = j.pelvis.y;
+        j.rHip.x = j.pelvis.x; j.rHip.y = j.pelvis.y;
+        this._chain("lHip", pose.lHip + sp, SEG.upperLeg, pose.lKn, SEG.lowerLeg, dir, "lKnee", "lFoot");
+        this._chain("rHip", pose.rHip + sp, SEG.upperLeg, pose.rKn, SEG.lowerLeg, dir, "rKnee", "rFoot");
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Effects                                                             */
+/* ------------------------------------------------------------------ */
+const effects = [];
+const projectiles = [];
+
+function fx(type, x, y, opt = {}) {
+    effects.push(Object.assign({
+        type, x, y, life: opt.life || 18, max: opt.life || 18,
+        r: opt.r || 20, color: opt.color || "#ffd34a", vx: 0, vy: 0
+    }, opt));
+}
+function fxHit(x, y, big) {
+    fx("spark", x, y, { life: big ? 14 : 10, r: big ? 34 : 22, color: "#fff2b0" });
+    const n = big ? 9 : 5;
+    for (let i = 0; i < n; i++) {
+        const a = rand(0, Math.PI * 2), s = rand(2, big ? 9 : 5.5);
+        effects.push({
+            type: "shard", x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1,
+            life: rand(12, 26), max: 26, r: rand(2, 4), color: "#ffd34a"
+        });
+    }
+}
+function fxBlock(x, y) {
+    fx("ring", x, y, { life: 14, r: 16, color: "#7ec8ff" });
+    for (let i = 0; i < 4; i++) {
+        const a = rand(-1.2, 1.2), s = rand(2, 5);
+        effects.push({
+            type: "shard", x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+            life: rand(8, 16), max: 16, r: rand(1.5, 3), color: "#bfe6ff"
+        });
+    }
+}
+function fxDust(x, y, dir, n = 4) {
+    for (let i = 0; i < n; i++) {
+        effects.push({
+            type: "dust", x: x + rand(-6, 6), y, vx: -dir * rand(0.6, 2.6), vy: rand(-1.6, -0.3),
+            life: rand(14, 26), max: 26, r: rand(3, 7), color: "rgba(190,190,200,"
+        });
+    }
+}
+
+function updateEffects() {
+    for (let i = effects.length - 1; i >= 0; i--) {
+        const e = effects[i];
+        e.life--;
+        if (e.vx !== undefined) { e.x += e.vx; e.y += e.vy; }
+        if (e.type === "shard") e.vy += 0.35;
+        if (e.type === "dust") { e.vy += 0.03; e.vx *= 0.94; }
+        if (e.life <= 0) effects.splice(i, 1);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Fighter                                                             */
+/* ------------------------------------------------------------------ */
+class Fighter {
+    constructor(styleKey, x, dir, isAI, id) {
+        this.id = id;
+        this.styleKey = styleKey;
+        this.S = STYLES[styleKey];
+        this.isAI = isAI;
+        this.startX = x;
+
+        this.skel = new Skeleton();
+        this.pose = Object.assign({}, NEUTRAL);
+        this.target = Object.assign({}, NEUTRAL);
+
+        this.dec = new ComboDec();
+        this.lastDir = 5;
+        this.dashTap = { dir: 0, timer: 0 };
+
+        this.reset(x, dir);
+    }
+
+    reset(x, dir) {
+        this.x = x; this.y = CFG.groundY;
+        this.vx = 0; this.vy = 0;
+        this.dir = dir;
+        this.hp = this.S.hp; this.maxHp = this.S.hp;
+        this.meter = 0; this.guard = 100;
+        this.state = "idle"; this.stateT = 0;
+        this.move = null; this.moveKey = null; this.moveT = 0;
+        this.hitList = [];         // who this active move already touched
+        this.hasHit = false;
+        this.fall = 0;             // accumulates; past CFG.fallKO -> knockdown
+        this.hitstop = 0;
+        this.combo = 0; this.comboTimer = 0;
+        this.gait = 0;             // gait phase, advanced by distance travelled
+        this.spin = 0;
+        this.blocking = false; this.blockLow = false;
+        this.airborne = false;
+        this.invuln = false; this.armor = false;
+        this.breathe = Math.random() * Math.PI * 2;
+        this.pose = Object.assign({}, NEUTRAL);
+        this.target = Object.assign({}, NEUTRAL);
+        this.dec.clear();
+        this.aiTimer = 0; this.aiPlan = "approach";
+    }
+
+    get grounded() { return this.y >= CFG.groundY - 0.001; }
+    get dead() { return this.hp <= 0; }
+
+    /* -------------------------------------------------------------- */
+    /* Input reading                                                   */
+    /* -------------------------------------------------------------- */
+
+    /* Convert the raw stick into facing-relative numpad notation. */
+    numpad(ix, iy) {
+        const f = this.dir;         // forward is +x when facing right
+        let h = 0;
+        if (ix > 0.4) h = f > 0 ? 1 : -1;
+        else if (ix < -0.4) h = f > 0 ? -1 : 1;
+        let v = 0;
+        if (iy > 0.45) v = -1;      // down
+        else if (iy < -0.45) v = 1; // up
+        return 5 + h + v * 3;       // 5 is neutral, 6 forward, 4 back, 2 down...
+    }
+
+    feedInput(inp) {
+        const np = this.numpad(inp.x, inp.y);
+        if (np !== this.lastDir) {
+            this.dec.push(np);
+            // Double-tap forward starts a run, the same trigger LF2 uses.
+            if (np === 6) {
+                if (this.dashTap.dir === 6 && this.dashTap.timer > 0) this.wantRun = true;
+                this.dashTap.dir = 6; this.dashTap.timer = 14;
+            } else if (np === 4) {
+                if (this.dashTap.dir === 4 && this.dashTap.timer > 0) this.wantBackDash = true;
+                this.dashTap.dir = 4; this.dashTap.timer = 14;
             }
-            this.targetPose = {
-                lShoulder: 160, lElbow: 0,
-                rShoulder: 180, rElbow: 0,
-                lHip: 90, lKnee: 0,
-                rHip: 70, rKnee: 0,
-                trunkTilt: 90 
-            };
-            this.globalRotation = 0;
-            this.vy += GRAVITY;
-            this.x += this.vx;
-            this.y += this.vy;
-            
-            if (this.y > GROUND_Y) {
-                this.y = GROUND_Y;
-                this.vy = 0;
-                this.vx = 0; 
+            this.lastDir = np;
+        }
+        for (const b of BUTTONS) if (inp.pressed[b]) this.dec.push(b);
+        this.inp = inp;
+        this.np = np;
+    }
+
+    /* Look for a special: the motion must have just completed and the button
+       pressed this frame. Checked before normals so specials win. */
+    findSpecial(inp) {
+        const sp = this.S.specials;
+        for (const key in sp) {
+            const m = sp[key];
+            if (!m.btns.some(b => inp.pressed[b])) continue;
+            if (this.dec.match(m.motion)) return m;
+        }
+        return null;
+    }
+
+    findNormal(inp) {
+        const crouching = this.np === 1 || this.np === 2 || this.np === 3;
+        for (const b of BUTTONS) {
+            if (!inp.pressed[b]) continue;
+            if (!this.grounded) return (b[1] === "P") ? MOVES.jP : MOVES.jK;
+            if (crouching) {
+                if (b === "LP" || b === "MP") return b === "LP" ? MOVES.cLP : MOVES.cMP;
+                if (b === "HP") return MOVES.cMP;
+                if (b === "LK" || b === "MK") return b === "LK" ? MOVES.cLK : MOVES.cLK;
+                return MOVES.cHK;
             }
-            
-            for (let joint in this.pose) {
-                this.pose[joint] = lerp(this.pose[joint], this.targetPose[joint], 0.15);
+            return MOVES[b];
+        }
+        return null;
+    }
+
+    /* -------------------------------------------------------------- */
+    /* Actions                                                         */
+    /* -------------------------------------------------------------- */
+    startMove(m, key) {
+        this.state = "attack";
+        this.move = m; this.moveKey = key || m.name;
+        this.moveT = 0;
+        this.hitList.length = 0;
+        this.hasHit = false;
+        this.spin = 0;
+        if (m.move) {
+            this.vx = this.dir * m.move.x;
+            if (m.move.y) { this.vy = m.move.y; this.y -= 1; this.airborne = true; }
+        } else if (this.grounded && !m.air) {
+            this.vx *= 0.25;
+        }
+    }
+
+    // Frame-data helpers, with the style's global speed multiplier applied.
+    dur(m) {
+        const k = this.S.speedMul || 1;
+        return {
+            s: Math.round(m.startup * (m.startup > 6 ? k : 1)),
+            a: m.active,
+            r: Math.round(m.recovery * k)
+        };
+    }
+    phase(m) {
+        const d = this.dur(m);
+        if (this.moveT < d.s) return "s";
+        if (this.moveT < d.s + d.a) return "a";
+        return "r";
+    }
+    moveDone(m) {
+        const d = this.dur(m);
+        return this.moveT >= d.s + d.a + d.r;
+    }
+
+    jump(dirX) {
+        this.vy = this.S.jumpV;
+        this.vx = dirX * this.S.jumpX;
+        this.y -= 1;
+        this.state = "air";
+        this.airborne = true;
+        fxDust(this.x, CFG.groundY, this.dir, 5);
+    }
+
+    takeHit(atk, attacker, mv) {
+        const scale = SCALING[Math.min(attacker.combo, SCALING.length - 1)];
+        const styleMul = attacker.S.dmgMul || 1;
+        let dmg = mv.dmg * styleMul * scale / this.S.defense;
+
+        // ---- blocking ----
+        const blockable = this.canBlock(mv);
+        if (blockable) {
+            const chip = dmg * CFG.chipFactor;
+            this.hp = Math.max(0, this.hp - chip);
+            this.guard -= 8 + mv.dmg * 0.06;
+            this.state = "blockstun";
+            this.stateT = mv.blockstun || 10;
+            this.vx = attacker.dir * (mv.kb * 0.45);
+            this.meter = Math.min(100, this.meter + CFG.meterOnBlock);
+            attacker.meter = Math.min(100, attacker.meter + mv.meter * 0.5);
+            this.hitstop = 6; attacker.hitstop = 6;
+            const p = this.skel.j.chest;
+            fxBlock(p.x - this.dir * 22, p.y + (this.blockLow ? 18 : 0));
+            if (this.guard <= 0) {           // guard break: full punish window
+                this.guard = 100;
+                this.state = "hitstun"; this.stateT = 34;
+                this.vx = attacker.dir * 7;
+                fx("ring", p.x, p.y, { life: 22, r: 30, color: "#ff9c4a" });
+                announce("GUARD BREAK");
             }
-            return; 
+            return "block";
         }
 
-        if (this.spCooldown > 0) this.spCooldown--;
-        if (this.pjCooldown > 0) this.pjCooldown--;
-
-        let jx = 0;
-        let jy = 0;
-        let grabInput = false;
-        let pjInput = false;
-
-        if (!this.isAI) {
-            jx = joystick.x;
-            jy = joystick.y;
-            grabInput = (input.a && input.b) || (input.x && input.y);
-            pjInput = input.pj;
-        } else if (this.state !== 'spin') {
-            let dist = opponent.x - this.x;
-            if (Math.abs(dist) > 65) {
-                jx = dist > 0 ? 0.5 : -0.5;
-            } else {
-                jx = 0;
-                if (Math.random() < 0.04 && !this.isAttacking()) {
-                    const attacks = ['punchA', 'punchB', 'kickX', 'kickY'];
-                    this.startAttack(attacks[Math.floor(Math.random() * attacks.length)], 25);
-                }
-                if (Math.random() < 0.015 && dist < 50 && !this.isAttacking()) {
-                    grabInput = true;
-                }
-            }
-            if (Math.random() < 0.01 && dist > 150 && this.pjCooldown === 0 && !this.isAttacking()) {
-                pjInput = true;
-            }
-            if (Math.random() < 0.015 && this.y === GROUND_Y) {
-                jy = -1; 
-                jx = dist > 0 ? 0.6 : -0.6; 
-            }
+        // ---- clean hit ----
+        if (this.armor) {                    // super-armour absorbs one hit
+            this.armor = false;
+            this.hp = Math.max(0, this.hp - dmg * 0.5);
+            this.hitstop = 5; attacker.hitstop = 5;
+            fx("ring", this.skel.j.chest.x, this.skel.j.chest.y, { life: 16, r: 26, color: "#ffb43a" });
+            return "armor";
         }
 
-        if (this.state !== 'spin' && this.y >= GROUND_Y) {
-            if (opponent.x > this.x + 20) this.facingRight = true;
-            else if (opponent.x < this.x - 20) this.facingRight = false;
-        }
+        this.hp = Math.max(0, this.hp - dmg);
+        this.meter = Math.min(100, this.meter + dmg * CFG.meterOnTake * 0.05);
+        attacker.meter = Math.min(100, attacker.meter + dmg * CFG.meterOnDeal * 0.05);
+        attacker.combo++;
+        attacker.comboTimer = 60;
 
-        if (this.state === 'idle' || this.state === 'walk' || (this.y < GROUND_Y && !this.isAttacking())) {
-            
-            // Apply 20% slower walking pace (4.8 instead of 6)
-            if (Math.abs(jx) > 0.1 && this.y === GROUND_Y) {
-                this.vx = jx * 4.8; 
-                this.state = 'walk';
-            } else if (this.y === GROUND_Y) {
-                this.vx = 0;
-                this.state = 'idle';
-            }
+        const heavy = mv.dmg >= 60 || mv.knockdown;
+        this.hitstop = heavy ? 11 : 7;
+        attacker.hitstop = this.hitstop;
 
-            if (jy < -0.5 && this.y === GROUND_Y) {
-                this.vy = -16;
-                this.vx = jx * 8; 
-                this.y -= 1;
-            }
+        this.fall += mv.fall || 10;
+        this.vx = attacker.dir * mv.kb;
+        if (mv.kbY) { this.vy = mv.kbY; this.y -= 1; this.airborne = true; }
 
-            if (grabInput && !this.isAttacking()) {
-                this.startAttack('grab', 20);
-            } else if (pjInput && this.pjCooldown === 0 && !this.isAttacking()) {
-                this.startAttack('throwPj', 15);
-                projectiles.push(new Projectile(this.x + (this.facingRight ? 40 : -40), this.y - 70, this.facingRight ? 1 : -1, this.id));
-                this.pjCooldown = this.pjMaxCooldown;
-            } else if (!this.isAI && !this.isAttacking()) {
-                if (input.special && this.spCooldown === 0) {
-                    this.state = 'spin';
-                    this.stateTimer = FPS * 3; 
-                    this.hasHit = false;
-                } else if (input.a) { this.startAttack('punchA', 15); }
-                else if (input.b) { this.startAttack('punchB', 30); }
-                else if (input.x) { this.startAttack('kickX', 20); }
-                else if (input.y) { this.startAttack('kickY', 35); }
-            }
-        }
-
-        this.updatePoses(jx);
-
-        if (this.state === 'spin') {
-            this.vx = jx * 10;
-            this.vy = jy * 10;
-            this.globalRotation += (this.facingRight ? 15 : -15);
-            this.checkHit(opponent);
-            this.stateTimer--;
-            if (this.stateTimer <= 0) {
-                this.state = 'idle';
-                this.globalRotation = 0;
-                this.spCooldown = this.spMaxCooldown;
-            }
+        // An airborne victim, a launcher, or enough accumulated fall value
+        // sends them into the knockdown arc -- LF2's `fall` system.
+        if (mv.knockdown || mv.launcher || !this.grounded || this.fall >= CFG.fallKO) {
+            this.state = "launched";
+            this.stateT = 0;
+            if (!mv.kbY) { this.vy = -8; this.y -= 1; }
+            this.airborne = true;
         } else {
-            this.globalRotation = 0;
-            this.vy += GRAVITY;
+            this.state = "hitstun";
+            this.stateT = mv.hitstun;
+        }
+        this.blocking = false;
+
+        const sp = attacker.strikePoint(mv);
+        fxHit(sp ? sp.x : this.skel.j.chest.x, sp ? sp.y : this.skel.j.chest.y, heavy);
+        if (this.hp <= 0) { this.state = "launched"; this.vy = Math.min(this.vy, -9); this.airborne = true; }
+        return "hit";
+    }
+
+    canBlock(mv) {
+        if (this.state === "attack" || this.state === "hitstun" || this.state === "launched"
+            || this.state === "down" || this.state === "wakeup") return false;
+        if (!this.grounded) return false;         // no air blocking
+        if (!this.blocking) return false;
+        if (mv.level === "overhead" && this.blockLow) return false;
+        if (mv.level === "low" && !this.blockLow) return false;
+        return true;
+    }
+
+    strikePoint(mv) {
+        const n = mv.strike;
+        if (!n) return null;
+        if (n === "chest") return this.skel.j.chest;
+        if (n === "rKnee") return this.skel.j.rKnee;
+        if (n === "rElbow") return this.skel.j.rElbow;
+        return this.skel.j[n];
+    }
+
+    // Capsule hurtboxes read straight off the posed skeleton.
+    hurtboxes() {
+        const j = this.skel.j;
+        return [
+            { a: j.pelvis, b: j.chest, r: 17 },
+            { a: j.neck, b: j.head, r: 15 },
+            { a: j.pelvis, b: j.lKnee, r: 11 },
+            { a: j.pelvis, b: j.rKnee, r: 11 }
+        ];
+    }
+
+    /* -------------------------------------------------------------- */
+    /* Per-frame update                                                */
+    /* -------------------------------------------------------------- */
+    update(opp) {
+        if (this.hitstop > 0) { this.hitstop--; this.buildPose(); return; }
+
+        this.dec.frame();
+        if (this.dashTap.timer > 0) this.dashTap.timer--;
+        if (this.comboTimer > 0) { this.comboTimer--; if (this.comboTimer === 0) this.combo = 0; }
+        this.breathe += 0.055;
+
+        if (this.isAI) this.think(opp);
+        const inp = this.inp || P1_INPUT;
+
+        // Face the opponent while neutral and grounded.
+        if (this.grounded && ["idle", "walk", "run", "crouch", "block"].includes(this.state)) {
+            this.dir = opp.x > this.x ? 1 : -1;
         }
 
+        this.invuln = false; this.armor = false;
+        this.blocking = false;
+
+        switch (this.state) {
+            case "idle": case "walk": case "run": case "crouch": case "block":
+                this.neutral(inp, opp); break;
+            case "air":
+                this.airControl(inp); break;
+            case "attack":
+                this.attackStep(opp); break;
+            case "hitstun": case "blockstun":
+                if (--this.stateT <= 0) this.state = this.grounded ? "idle" : "air";
+                break;
+            case "launched":
+                this.stateT++;
+                if (this.grounded && this.vy >= 0 && this.stateT > 4) {
+                    this.state = "down"; this.stateT = 0;
+                    this.vx *= 0.2;
+                    fxDust(this.x, CFG.groundY, this.dir, 8);
+                    shake(6);
+                }
+                break;
+            case "down":
+                this.vx *= 0.8;
+                if (++this.stateT > (this.dead ? 100000 : 26)) { this.state = "wakeup"; this.stateT = 0; this.fall = 0; }
+                break;
+            case "wakeup":
+                this.invuln = true;
+                if (++this.stateT > 14) this.state = "idle";
+                break;
+            case "brake":
+                this.vx *= 0.78;
+                if (++this.stateT > 10) this.state = "idle";
+                break;
+        }
+
+        this.physics();
+        this.regen();
+        this.buildPose();
+    }
+
+    neutral(inp, opp) {
+        const np = this.np !== undefined ? this.np : 5;
+        const crouching = np <= 3;
+        const back = (np === 4 || np === 1 || np === 7);
+        const fwd = (np === 6 || np === 3 || np === 9);
+
+        // Blocking is holding away from the opponent, like every 2D fighter.
+        if (back) { this.blocking = true; this.blockLow = crouching; }
+
+        // ---- specials take priority ----
+        const sp = this.findSpecial(inp);
+        if (sp) { this.startMove(sp, sp.name); this.dec.clear(); return; }
+        const nm = this.findNormal(inp);
+        if (nm) { this.startMove(nm); return; }
+
+        // ---- jump ----
+        if (np >= 7) { this.jump(np === 8 ? 0 : (np === 9 ? this.dir : -this.dir)); return; }
+
+        // ---- run / dash ----
+        if (this.wantRun) { this.wantRun = false; this.state = "run"; }
+        if (this.wantBackDash) {
+            this.wantBackDash = false;
+            this.vx = -this.dir * this.S.dashSpeed;
+            this.state = "brake"; this.stateT = 0;
+            fxDust(this.x, CFG.groundY, -this.dir, 6);
+            return;
+        }
+
+        if (this.state === "run") {
+            if (!fwd) {                       // releasing forward -> skid stop
+                this.state = "brake"; this.stateT = 0;
+                fxDust(this.x, CFG.groundY, this.dir, 5);
+                return;
+            }
+            this.vx = this.dir * this.S.runSpeed;
+            return;
+        }
+
+        if (crouching) { this.state = "crouch"; this.vx *= 0.6; return; }
+
+        if (fwd) { this.vx = this.dir * this.S.walkSpeed; this.state = "walk"; }
+        else if (back) { this.vx = -this.dir * this.S.backSpeed; this.state = "walk"; }
+        else { this.vx *= 0.5; this.state = this.blocking ? "block" : "idle"; }
+    }
+
+    airControl(inp) {
+        const sp = this.findSpecial(inp);
+        if (sp && sp.air) { this.startMove(sp, sp.name); return; }
+        const nm = this.findNormal(inp);
+        if (nm) { this.startMove(nm); return; }
+        if (this.grounded) {
+            this.state = "idle";
+            this.airborne = false;
+            fxDust(this.x, CFG.groundY, this.dir, 4);
+        }
+    }
+
+    attackStep(opp) {
+        const m = this.move;
+        const ph = this.phase(m);
+
+        if (m.invuln && this.moveT >= m.invuln[0] && this.moveT <= m.invuln[1]) this.invuln = true;
+        if (m.armor && ph !== "r") this.armor = true;
+
+        // Whole-body rotation only makes sense while the fighter is off the
+        // ground -- left running once they land it drives the head through the
+        // floor. Grounded, it unwinds back upright instead.
+        if (m.spin) {
+            if (this.grounded) this.spin = lerpAngle(this.spin, 0, 0.25);
+            else this.spin = (this.spin + (ph === "a" ? m.spin : m.spin * 0.4)) % 360;
+        }
+        // A spinning kick read from the side is the leg orbiting the hip, not
+        // the body tumbling. This keeps the torso upright and the kick legible.
+        if (m.legSpin) {
+            this.legSpin = (ph === "s") ? 0 : (this.legSpin + m.legSpin) % 360;
+        } else this.legSpin = 0;
+
+        if (ph === "a") {
+            if (m.projectile && !this.hasHit) {
+                this.hasHit = true;
+                const o = this.skel.j.rHand;
+                projectiles.push({
+                    x: o.x, y: o.y, vx: this.dir * m.projectile.speed, dir: this.dir,
+                    owner: this, d: m.projectile, life: 130, r: m.projectile.radius, t: 0
+                });
+            } else if (m.strike) {
+                this.checkHit(opp, m);
+            }
+            if (m.quake && this.moveT === this.dur(m).s) { shake(m.quake); fxDust(this.x + this.dir * 30, CFG.groundY, this.dir, 10); }
+        }
+
+        // Cancel windows: on a connected hit, chain into a stronger normal or
+        // straight into a special. This is what makes combos feel like SF.
+        if (this.hasHit && m.cancel && m.cancel.length && ph !== "s" && !this.isAI) {
+            const inp = this.inp || P1_INPUT;
+            const sp = this.findSpecial(inp);
+            if (sp && m.cancel.includes("special")) { this.startMove(sp, sp.name); this.dec.clear(); return; }
+            const nm = this.findNormal(inp);
+            if (nm) {
+                const key = Object.keys(MOVES).find(k => MOVES[k] === nm);
+                if (key && m.cancel.includes(key)) { this.startMove(nm, key); return; }
+            }
+        }
+
+        this.moveT++;
+        if (this.moveDone(m)) {
+            this.move = null; this.spin = 0;
+            this.state = this.grounded ? "idle" : "air";
+            if (this.grounded) this.airborne = false;
+        }
+    }
+
+    checkHit(opp, m) {
+        if (this.hitList.includes(opp) && !m.multihit) return;
+        if (m.multihit && this.moveT % 3 !== 0) return;
+        if (opp.invuln || opp.dead) return;
+
+        const p = this.strikePoint(m);
+        if (!p) return;
+        for (const hb of opp.hurtboxes()) {
+            const d = distPointSeg(p.x, p.y, hb.a.x, hb.a.y, hb.b.x, hb.b.y);
+            if (d < m.radius + hb.r) {
+                if (!m.multihit) this.hitList.push(opp);
+                this.hasHit = true;
+                opp.takeHit(this, this, m);
+                return;
+            }
+        }
+    }
+
+    physics() {
+        // Gravity + air drag
+        if (!this.grounded || this.vy < 0) {
+            this.vy += CFG.gravity * (this.S.weight * 0.5 + 0.5);
+            this.vx *= (1 - CFG.airFriction);
+        }
         this.x += this.vx;
         this.y += this.vy;
 
-        if (this.y > GROUND_Y) {
-            this.y = GROUND_Y;
-            this.vy = 0;
-            if (this.state !== 'spin' && !this.isAttacking()) this.vx = 0; 
+        if (this.y >= CFG.groundY) {
+            this.y = CFG.groundY;
+            if (this.vy > 0) this.vy = 0;
+            if (this.airborne && this.state === "air") { this.state = "idle"; this.airborne = false; }
+            this.airborne = false;
+            // Ground friction, sharper the slower you go (LF2 friction table).
+            if (this.state !== "run" && this.state !== "walk") {
+                if (this.vx) {
+                    this.vx -= sign(this.vx) * CFG.friction;
+                    if (Math.abs(this.vx) < CFG.minSpeed) this.vx = 0;
+                }
+            }
         }
-        if (this.x < 30) this.x = 30;
-        if (this.x > canvas.width - 30) this.x = canvas.width - 30;
+        this.x = clamp(this.x, -CFG.stageHalf, CFG.stageHalf);
 
-        for (let joint in this.pose) {
-            this.pose[joint] = lerp(this.pose[joint], this.targetPose[joint], 0.3);
+        // Gait phase advances with distance covered, not wall time, so the
+        // feet stay planted at any speed. This is the anti-skate trick.
+        const stride = this.state === "run" ? this.S.runStride : this.S.stride;
+        if (this.grounded && (this.state === "walk" || this.state === "run")) {
+            this.gait += (this.vx * this.dir) / stride * Math.PI * 2;
+        } else if (this.grounded) {
+            // Ease the cycle back to a neutral stance instead of snapping.
+            const tgt = Math.round(this.gait / (Math.PI * 2)) * Math.PI * 2;
+            this.gait = lerp(this.gait, tgt, 0.18);
+        }
+    }
+
+    regen() {
+        if (this.guard < 100 && this.state !== "blockstun") this.guard = Math.min(100, this.guard + CFG.guardRecover);
+        if (this.fall > 0 && ["idle", "walk", "run", "crouch", "block"].includes(this.state)) {
+            this.fall = Math.max(0, this.fall - CFG.fallRecover);
+        }
+    }
+
+    /* -------------------------------------------------------------- */
+    /* Animation                                                       */
+    /* -------------------------------------------------------------- */
+    buildPose() {
+        const t = Object.assign({}, NEUTRAL);
+        let blend = 0.28;
+        let useLegIK = false;
+
+        switch (this.state) {
+            case "idle": case "block": {
+                // Idle sway: subtle breathing so the stance is never static.
+                const b = Math.sin(this.breathe) * 3;
+                t.lean = 8 + b * 0.4; t.head = -6 - b * 0.2;
+                t.lSh = 22 + b; t.rSh = 4 - b;
+                t.lEl = 104 + b; t.rEl = 122 - b;
+                t.pelvis = b * 0.5;
+                if (this.blocking) {
+                    // Guard: both forearms up and turned toward the threat.
+                    t.lSh = 46; t.lEl = 128; t.rSh = 30; t.rEl = 140;
+                    t.lean = -10; t.head = 6;
+                    t.crouch = this.blockLow ? 46 : 4;
+                    if (this.blockLow) { t.lHip = 16; t.lKn = -50; t.rHip = -12; t.rKn = -44; }
+                    blend = 0.4;
+                } else useLegIK = true;
+                break;
+            }
+            case "walk": case "run": {
+                useLegIK = true;
+                const run = this.state === "run";
+                const spd = Math.abs(this.vx);
+                const fwd = this.vx * this.dir > 0;
+                // Lean into the direction of travel; running leans much more.
+                t.lean = (run ? 26 : 12) * (fwd ? 1 : -0.35) + 4;
+                t.head = -t.lean * 0.55;
+                const amp = run ? 58 : 26;
+                const sw = Math.sin(this.gait) * amp * clamp(spd / 4, 0.35, 1.4);
+                if (run) {
+                    // Sprinting: full athletic arm drive, elbows locked tight.
+                    t.lSh = 4 + sw; t.rSh = 4 - sw;
+                    t.lEl = 98; t.rEl = 98;
+                } else {
+                    // Walking a fighter never drops the guard -- the hands stay
+                    // up and only rock slightly with the stride.
+                    t.lSh = 20 + sw * 0.35; t.lEl = 100;
+                    t.rSh = 2 - sw * 0.35; t.rEl = 118;
+                }
+                blend = 0.42;
+                break;
+            }
+            case "crouch":
+                t.crouch = 52; t.lean = 16; t.head = -10;
+                t.lHip = 20; t.lKn = -58; t.rHip = -16; t.rKn = -52;
+                t.lSh = 34; t.lEl = 106; t.rSh = 22; t.rEl = 118;
+                blend = 0.4;
+                break;
+            case "air": {
+                const rising = this.vy < 0;
+                t.crouch = rising ? -6 : 4;
+                t.lean = this.vx * this.dir > 0 ? 14 : -6;
+                // Tuck on the way up, reach for the floor on the way down.
+                t.lHip = rising ? 48 : 16; t.lKn = rising ? -96 : -46;
+                t.rHip = rising ? 10 : -22; t.rKn = rising ? -70 : -30;
+                t.lSh = rising ? -60 : -40; t.lEl = rising ? 50 : 60;
+                t.rSh = rising ? 54 : 40; t.rEl = rising ? 40 : 50;
+                blend = 0.2;
+                break;
+            }
+            case "brake": {
+                useLegIK = true;
+                t.lean = -22; t.head = 14; t.crouch = 34;
+                t.lSh = -50; t.lEl = 70; t.rSh = 44; t.rEl = 60;
+                blend = 0.35;
+                break;
+            }
+            case "attack": {
+                const m = this.move;
+                const ph = this.phase(m);
+                Object.assign(t, poseFrom(NEUTRAL, m.pose[ph]));
+                // Carry the orbiting leg on top of the authored pose.
+                if (m.legSpin && this.legSpin) { t.rHip += this.legSpin; t.lHip -= this.legSpin * 0.25; }
+                // Startup eases in, the active frame snaps -- that contrast is
+                // what makes an attack read as fast.
+                blend = ph === "a" ? 0.75 : (ph === "s" ? 0.35 : 0.22);
+                break;
+            }
+            case "hitstun": case "blockstun": {
+                const blocking = this.state === "blockstun";
+                const f = blocking ? 0.45 : 1;
+                t.lean = -26 * f; t.head = 18 * f;
+                // Blocking keeps the guard up; a clean hit throws the arms back.
+                t.lSh = blocking ? 46 : -40; t.rSh = blocking ? 30 : -30;
+                t.lEl = blocking ? 128 : 100; t.rEl = blocking ? 140 : 106;
+                t.crouch = this.blockLow ? 44 : 10;
+                blend = 0.5;
+                break;
+            }
+            case "launched": {
+                // Tumble: rotate the whole body while the limbs trail behind.
+                this.spin = (this.spin + 9 * -this.dir) % 360;
+                t.lean = -40; t.head = 22;
+                t.lSh = -110; t.rSh = -96; t.lEl = 40; t.rEl = 46;
+                t.lHip = 40; t.lKn = -40; t.rHip = 14; t.rKn = -64;
+                blend = 0.2;
+                break;
+            }
+            case "down": {
+                this.spin = lerpAngle(this.spin, -84 * this.dir, 0.35);
+                t.lean = 0; t.head = 0; t.crouch = 74;
+                t.lSh = -140; t.rSh = -130; t.lEl = 20; t.rEl = 26;
+                t.lHip = 16; t.lKn = -26; t.rHip = -10; t.rKn = -20;
+                blend = 0.3;
+                break;
+            }
+            case "wakeup": {
+                this.spin = lerpAngle(this.spin, 0, 0.3);
+                t.crouch = 46; t.lean = 18;
+                blend = 0.3;
+                break;
+            }
         }
 
-        if (this.isAttacking()) {
-            this.stateTimer--;
-            this.checkHit(opponent);
-            if (this.stateTimer <= 0) this.state = 'idle';
+        blendPose(this.pose, t, blend);
+        if (!["launched", "down", "wakeup"].includes(this.state) && !(this.move && this.move.spin)) {
+            this.spin = lerpAngle(this.spin, 0, 0.3);
         }
 
-        this.bodyBox = {
-            x: this.x - 20,
-            y: this.y - 120,
-            w: 40, h: 120
+        this.skel.build(this.pose, this.x, this.y, this.dir, this.spin);
+        if (useLegIK) this.applyLegIK();
+        else if (this.grounded && this.plantsFeet()) this.plantFeet();
+    }
+
+    // States where the fighter is standing on the floor and the hand-authored
+    // pose should not be allowed to leave a support foot hanging in mid air.
+    plantsFeet() {
+        if (this.state === "attack") return this.move && !this.move.airborne && !this.move.move?.y;
+        return ["crouch", "hitstun", "blockstun", "wakeup"].includes(this.state);
+    }
+
+    /* Pin support feet to the floor. Whichever limb is currently the weapon is
+       left exactly as the pose author intended -- only the legs holding the
+       fighter up get snapped down. */
+    plantFeet() {
+        const strike = (this.state === "attack" && this.move) ? this.move.strike : null;
+        this.plantLeg("lHip", "lKnee", "lFoot", -0.35);
+        if (strike !== "rFoot" && strike !== "rKnee") this.plantLeg("rHip", "rKnee", "rFoot", 0.4);
+    }
+
+    plantLeg(hip, knee, foot, offsetFrac) {
+        const h = this.skel.j[hip];
+        const drop = CFG.groundY - h.y;
+        // If the floor is out of reach the pose is deliberately airborne.
+        if (drop <= 4 || drop > SEG.upperLeg + SEG.lowerLeg - 2) return;
+        this.solveLeg(hip, knee, foot, { x: h.x + offsetFrac * 26 * this.dir, y: CFG.groundY });
+    }
+
+    /* Foot IK. Targets are computed in world space from the gait phase; the
+       stance foot stays pinned to the floor while the body travels over it,
+       which removes the sliding-feet look entirely. */
+    applyLegIK() {
+        const j = this.skel.j;
+        const run = this.state === "run";
+        const stride = run ? this.S.runStride : this.S.stride;
+        // The stance foot must travel backward relative to the pelvis at exactly
+        // the rate the pelvis travels forward. Over one stance phase the body
+        // covers stride/2 while the foot sweeps 2*reach, so reach = stride/4.
+        // Any other value is literally the amount the feet skid per step.
+        const reach = stride / 4;
+        const spdF = clamp(Math.abs(this.vx) / (run ? 6 : 3), 0, 1.4);
+        const lift = (run ? 30 : 14) * clamp(spdF, 0.2, 1.3);
+        const g = CFG.groundY;
+
+        /* Stance must sweep the foot backward LINEARLY. The body advances at a
+           constant rate, so only a constant-rate relative sweep can cancel it;
+           a sinusoidal path matches the body speed at just one instant and
+           skates either side of it. Swing is a cosine arc, which is smooth and
+           where sliding does not matter because the foot is off the floor. */
+        const foot = (phase) => {
+            let p = phase % (Math.PI * 2);
+            if (p < 0) p += Math.PI * 2;
+            let relX, fy;
+            if (p <= Math.PI) {                       // stance: planted
+                relX = reach * (1 - 2 * (p / Math.PI));
+                fy = 0;
+            } else {                                  // swing: lifted arc
+                const s = (p - Math.PI) / Math.PI;
+                relX = -reach * Math.cos(s * Math.PI);
+                fy = -Math.sin(s * Math.PI) * lift;
+            }
+            return { x: j.pelvis.x + relX * this.dir, y: g + fy };
         };
 
-        if(this.id === 'P1') {
-            const cdBar = document.getElementById('p1-sp-cd');
-            cdBar.style.width = `${(1 - (this.spCooldown / this.spMaxCooldown)) * 100}%`;
+        const lt = foot(this.gait);
+        const rt = foot(this.gait + Math.PI);
+        // Pelvis bob: highest at mid-stance, twice per stride.
+        const bob = -Math.abs(Math.sin(this.gait)) * (run ? 7 : 3);
+        j.pelvis.y += bob; j.chest.y += bob; j.neck.y += bob; j.head.y += bob;
+        j.lShoulder.y += bob; j.rShoulder.y += bob;
+        j.lElbow.y += bob; j.rElbow.y += bob; j.lHand.y += bob; j.rHand.y += bob;
+        j.lHip.y = j.pelvis.y; j.rHip.y = j.pelvis.y;
+        j.lHip.x = j.pelvis.x; j.rHip.x = j.pelvis.x;
+
+        this.solveLeg("lHip", "lKnee", "lFoot", lt);
+        this.solveLeg("rHip", "rKnee", "rFoot", rt);
+    }
+
+    solveLeg(hip, knee, foot, target) {
+        const j = this.skel.j;
+        const h = j[hip];
+        const [a1, a2] = Skeleton.ik(h.x, h.y, target.x, target.y,
+            SEG.upperLeg, SEG.lowerLeg, this.dir, 1);
+        const t1 = a1 * RAD;
+        j[knee].x = h.x + this.dir * Math.sin(t1) * SEG.upperLeg;
+        j[knee].y = h.y + Math.cos(t1) * SEG.upperLeg;
+        const t2 = (a1 + a2) * RAD;
+        j[foot].x = j[knee].x + this.dir * Math.sin(t2) * SEG.lowerLeg;
+        j[foot].y = j[knee].y + Math.cos(t2) * SEG.lowerLeg;
+    }
+
+    /* -------------------------------------------------------------- */
+    /* AI                                                              */
+    /* -------------------------------------------------------------- */
+    think(opp) {
+        const ai = this.ai || (this.ai = new InputSource());
+        BUTTONS.forEach(b => { ai.pressed[b] = false; ai.btn[b] = false; });
+        ai.x = 0; ai.y = 0;
+        this.inp = ai;
+
+        if (!["idle", "walk", "run", "crouch", "block", "air"].includes(this.state)) {
+            this.np = 5;
+            return;
         }
-    }
 
-    startAttack(attackName, duration) {
-        this.state = attackName;
-        this.stateTimer = duration;
-        this.hasHit = false;
-        if (this.y === GROUND_Y) this.vx = 0; 
-    }
+        const dist = Math.abs(opp.x - this.x);
+        const toward = opp.x > this.x ? 1 : -1;
+        this.aiTimer--;
 
-    isAttacking() {
-        return ['punchA', 'punchB', 'kickX', 'kickY', 'grab', 'throw', 'throwPj'].includes(this.state);
-    }
+        if (this.aiTimer <= 0) {
+            this.aiTimer = Math.floor(rand(14, 34));
+            const r = Math.random();
+            if (dist > 340) this.aiPlan = r < 0.55 ? "run" : "approach";
+            else if (dist > 150) this.aiPlan = r < 0.6 ? "approach" : (r < 0.8 ? "special" : "block");
+            else this.aiPlan = r < 0.5 ? "attack" : (r < 0.72 ? "block" : (r < 0.86 ? "retreat" : "special"));
+        }
 
-    updatePoses(jx) {
-        this.targetPose = { ...DEFAULT_POSE };
+        // Reactive layer: block incoming attacks, anti-air jump-ins.
+        const oppAttacking = opp.state === "attack" && opp.move;
+        if (oppAttacking && dist < 190 && Math.random() < 0.5) this.aiPlan = "block";
+        if (!opp.grounded && dist < 200 && Math.random() < 0.14) this.aiPlan = "antiair";
 
-        if (this.state === 'walk') {
-            let swing = Math.sin(Date.now() / 100) * 40;
-            this.targetPose.lShoulder = -50 + swing;
-            this.targetPose.rShoulder = -50 - swing;
-            this.targetPose.lHip = -10 - swing;
-            this.targetPose.rHip = -10 + swing;
-            this.targetPose.lKnee = 20;
-            this.targetPose.rKnee = 20;
-            this.targetPose.trunkTilt = 15;
-        } else if (this.y < GROUND_Y && !this.isAttacking() && this.state !== 'spin') {
-            this.targetPose.lHip = -60; this.targetPose.lKnee = 100; 
-            this.targetPose.rHip = 10; this.targetPose.rKnee = 80;
-            this.targetPose.lShoulder = -120; this.targetPose.rShoulder = 120; 
-        } else if (this.state === 'punchA') {
-            this.targetPose.lShoulder = -90; 
-            this.targetPose.lElbow = 0;      
-            this.targetPose.rShoulder = -30; 
-            this.targetPose.trunkTilt = 20;
-        } else if (this.state === 'punchB') {
-            let progress = this.stateTimer / 30; 
-            if (progress > 0.5) { 
-                this.targetPose.rShoulder = 180; this.targetPose.rElbow = -90;
-                this.targetPose.lShoulder = -90;
-            } else { 
-                this.targetPose.rShoulder = -90; this.targetPose.rElbow = 0;
-                this.targetPose.lShoulder = 120;
-                this.targetPose.trunkTilt = 30;
-            }
-        } else if (this.state === 'kickX' || this.state === 'kickY') {
-            if (this.y < GROUND_Y) {
-                // Sweep leg from 0 to 90 degrees when jumping and kicking
-                let progress = this.stateTimer / (this.state === 'kickX' ? 20 : 35); 
-                let sweepAngle = lerp(-90, 0, progress); // from 0 down to -90 forward
-                this.targetPose.lHip = sweepAngle;
-                this.targetPose.lKnee = 0;
-                this.targetPose.rHip = sweepAngle + 20; 
-                this.targetPose.rKnee = 30;
-                this.targetPose.trunkTilt = 10;
-            } else {
-                if (this.state === 'kickX') {
-                    this.targetPose.lHip = -90; this.targetPose.lKnee = 0;
-                    this.targetPose.rHip = 10; this.targetPose.rKnee = 20;
-                    this.targetPose.trunkTilt = -10;
-                } else {
-                    let progress = this.stateTimer / 35;
-                    if (progress > 0.6) { 
-                        this.targetPose.rHip = -90; this.targetPose.rKnee = 120;
-                        this.targetPose.trunkTilt = 0;
-                    } else { 
-                        this.targetPose.rHip = -120; this.targetPose.rKnee = 0;
-                        this.targetPose.trunkTilt = -30;
-                    }
+        switch (this.aiPlan) {
+            case "approach": ai.x = toward; break;
+            case "run":
+                ai.x = toward;
+                if (Math.random() < 0.3) this.wantRun = true;
+                break;
+            case "retreat": ai.x = -toward; break;
+            case "block": ai.x = -toward; if (Math.random() < 0.3) ai.y = 1; break;
+            case "antiair":
+                if (dist < 150 && Math.random() < 0.3) {
+                    const dp = Object.values(this.S.specials).find(s => s.invuln);
+                    if (dp) { this.startMove(dp, dp.name); this.aiPlan = "approach"; return; }
                 }
-            }
-        } else if (this.state === 'grab') {
-            // Reach both arms to grab
-            this.targetPose.lShoulder = -90; this.targetPose.lElbow = 0;
-            this.targetPose.rShoulder = -90; this.targetPose.rElbow = 0;
-            this.targetPose.trunkTilt = 15;
-        } else if (this.state === 'throw') {
-            // Throw animation
-            this.targetPose.lShoulder = -160; this.targetPose.lElbow = -20;
-            this.targetPose.rShoulder = -160; this.targetPose.rElbow = -20;
-            this.targetPose.trunkTilt = -30;
-        } else if (this.state === 'throwPj') {
-            this.targetPose.lShoulder = -90; this.targetPose.lElbow = 0;
-            this.targetPose.rShoulder = 0; this.targetPose.rElbow = -90;
-            this.targetPose.trunkTilt = 10;
-        } else if (this.state === 'spin') {
-            this.targetPose.lShoulder = -90; this.targetPose.rShoulder = -90;
-            this.targetPose.lElbow = 0; this.targetPose.rElbow = 0;
-            this.targetPose.lHip = -30; this.targetPose.rHip = -30;
-            this.targetPose.trunkTilt = 0;
-        }
-    }
-
-    checkHit(opponent) {
-        if (this.hasHit || opponent.hp <= 0) return;
-
-        let strikePoint = null;
-        let damage = 0;
-
-        if (this.state === 'punchA') { strikePoint = this.limbs.lHand; damage = 5; }
-        else if (this.state === 'punchB') { strikePoint = this.limbs.rHand; damage = 15; }
-        else if (this.state === 'kickX') { strikePoint = this.limbs.lFoot; damage = 8; }
-        else if (this.state === 'kickY') { strikePoint = this.limbs.rFoot; damage = 20; }
-        else if (this.state === 'grab') { strikePoint = this.limbs.lHand; damage = 0; }
-        else if (this.state === 'spin') { 
-            if (this.stateTimer % 15 === 0) this.hasHit = false; 
-            strikePoint = this.limbs.lHand; 
-            damage = 5; 
-        }
-
-        if (strikePoint) {
-            let ob = opponent.bodyBox;
-            if (strikePoint.x > ob.x && strikePoint.x < ob.x + ob.w &&
-                strikePoint.y > ob.y && strikePoint.y < ob.y + ob.h) {
-                
-                if (this.state === 'grab') {
-                    // Transition to throw state on successful grab contact
-                    this.state = 'throw';
-                    this.stateTimer = 20;
-                    this.hasHit = true;
-                    
-                    let dir = this.facingRight ? 1 : -1;
-                    opponent.takeDamage(12);
-                    opponent.vx = dir * 16;
-                    opponent.vy = -10;
-                    spawnHitEffect(strikePoint.x, strikePoint.y);
-                } else {
-                    opponent.takeDamage(damage);
-                    this.hasHit = true;
-                    let dir = (strikePoint.x > opponent.x) ? -1 : 1;
-                    opponent.vx = dir * (damage * 0.5);
-                    opponent.vy = -3;
-                    spawnHitEffect(strikePoint.x, strikePoint.y);
+                ai.x = -toward;
+                break;
+            case "attack":
+                if (dist < 130 && Math.random() < 0.28) {
+                    const pick = ["LP", "MP", "LK", "MK", "HP", "HK"][Math.floor(Math.random() * 6)];
+                    ai.pressed[pick] = true; ai.btn[pick] = true;
+                    if (Math.random() < 0.3) ai.y = 1;
+                } else ai.x = toward;
+                break;
+            case "special":
+                if (Math.random() < 0.1) {
+                    const list = Object.values(this.S.specials);
+                    const m = list[Math.floor(Math.random() * list.length)];
+                    // Only fire from a sensible range for that move's reach.
+                    const ok = m.projectile ? dist > 220 : (m.move ? dist < 300 : dist < 140);
+                    if (ok) { this.startMove(m, m.name); this.aiPlan = "approach"; return; }
                 }
-            }
-        }
-    }
-
-    takeDamage(amount) {
-        if (this.hp <= 0) return;
-        this.hp -= amount;
-        if (this.hp < 0) this.hp = 0;
-        const healthBar = document.getElementById(`${this.id.toLowerCase()}-health`);
-        const percent = (this.hp / this.maxHp) * 100;
-        healthBar.style.width = `${percent}%`;
-        healthBar.style.background = percent > 30 ? '#00ff00' : '#ff0000';
-    }
-
-    drawLimbSegment(ctx, upperLen, lowerLen, angle1, angle2, saveName, dir) {
-        ctx.rotate(toRad(angle1 * dir));
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, upperLen); ctx.stroke();
-        
-        ctx.translate(0, upperLen);
-        ctx.rotate(toRad(angle2 * dir));
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, lowerLen); ctx.stroke();
-        
-        ctx.translate(0, lowerLen);
-        this.saveLimbPos(saveName, ctx);
-    }
-
-    draw(ctx) {
-        ctx.save();
-        
-        let targetPelvisY = this.y - this.sizes.upperLeg - this.sizes.lowerLeg + 15;
-        if (this.state === 'dead') targetPelvisY = this.y - 10;
-        this.pelvisY = lerp(this.pelvisY || targetPelvisY, targetPelvisY, 0.2);
-
-        ctx.translate(this.x, this.pelvisY);
-        
-        if (this.state === 'spin') {
-            ctx.translate(0, -this.sizes.trunkH/2);
-            ctx.rotate(toRad(this.globalRotation));
-            ctx.translate(0, this.sizes.trunkH/2);
+                ai.x = toward;
+                break;
         }
 
-        let dir = this.facingRight ? 1 : -1;
-        let stickWidth = 8;
-        let color = this.color;
-
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        
-        let neckX = Math.sin(toRad(this.pose.trunkTilt * dir)) * this.sizes.trunkH;
-        let neckY = -Math.cos(toRad(this.pose.trunkTilt * dir)) * this.sizes.trunkH;
-
-        ctx.save();
-        ctx.translate(neckX, neckY);
-        ctx.strokeStyle = '#999'; ctx.lineWidth = stickWidth;
-        this.drawLimbSegment(ctx, this.sizes.upperArm, this.sizes.lowerArm, this.pose.rShoulder, this.pose.rElbow, 'rHand', dir);
-        ctx.restore();
-
-        ctx.save();
-        ctx.strokeStyle = '#999'; ctx.lineWidth = stickWidth;
-        this.drawLimbSegment(ctx, this.sizes.upperLeg, this.sizes.lowerLeg, this.pose.rHip, this.pose.rKnee, 'rFoot', dir);
-        ctx.restore();
-
-        ctx.save();
-        ctx.rotate(toRad(this.pose.trunkTilt * dir));
-        ctx.strokeStyle = color; ctx.lineWidth = stickWidth + 1;
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -this.sizes.trunkH); ctx.stroke();
-
-        ctx.translate(0, -this.sizes.trunkH);
-        ctx.fillStyle = color;
-        ctx.beginPath(); ctx.arc(0, -this.sizes.head, this.sizes.head, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'white';
-        ctx.beginPath(); ctx.arc(dir * 6, -this.sizes.head - 3, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
-
-        ctx.save();
-        ctx.translate(neckX, neckY);
-        ctx.strokeStyle = color; ctx.lineWidth = stickWidth;
-        this.drawLimbSegment(ctx, this.sizes.upperArm, this.sizes.lowerArm, this.pose.lShoulder, this.pose.lElbow, 'lHand', dir);
-        ctx.restore();
-
-        ctx.save();
-        ctx.strokeStyle = color; ctx.lineWidth = stickWidth;
-        this.drawLimbSegment(ctx, this.sizes.upperLeg, this.sizes.lowerLeg, this.pose.lHip, this.pose.lKnee, 'lFoot', dir);
-        ctx.restore();
-
-        ctx.restore();
-    }
-
-    saveLimbPos(name, ctx) {
-        let matrix = ctx.getTransform();
-        this.limbs[name].x = matrix.e;
-        this.limbs[name].y = matrix.f;
+        if (Math.random() < 0.012 && dist > 180) ai.y = -1;   // occasional jump-in
+        this.np = this.numpad(ai.x, ai.y);
     }
 }
 
-const p1 = new HumanoidFighter(300, 'P1', '#3498db', false);
-const p2 = new HumanoidFighter(900, 'P2', '#e74c3c', true);
+/* ------------------------------------------------------------------ */
+/* Camera                                                             */
+/* ------------------------------------------------------------------ */
+const cam = { x: 0, focusY: 420, zoom: 1.6, shake: 0 };
+function shake(a) { cam.shake = Math.max(cam.shake, a); }
 
-function animate() {
-    requestAnimationFrame(animate);
-    
-    ctx.fillStyle = '#333';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#555';
-    ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+// How far down the screen the floor should sit, as a fraction of view height.
+const FLOOR_ON_SCREEN = 0.86;
 
-    p1.update(p2);
-    p2.update(p1);
-    
-    p2.draw(ctx);
-    p1.draw(ctx);
+function updateCamera(a, b) {
+    const mid = (a.x + b.x) / 2;
+    const dist = Math.abs(a.x - b.x);
+    // Pull back as the fighters separate, push in when they close.
+    const targetZoom = clamp(1100 / (dist + 480), 1.0, 1.85);
+    cam.zoom = lerp(cam.zoom, targetZoom, 0.06);
 
-    // Process Projectiles
-    for (let i = projectiles.length - 1; i >= 0; i--) {
-        let p = projectiles[i];
-        p.update();
-        p.draw(ctx);
-        
-        let target = (p.ownerId === 'P1') ? p2 : p1;
-        if (p.active && target.hp > 0) {
-            let ob = target.bodyBox;
-            if (p.x > ob.x && p.x < ob.x + ob.w && p.y > ob.y && p.y < ob.y + ob.h) {
-                target.takeDamage(10);
-                target.vx = p.vx * 0.5;
-                target.vy = -5;
-                spawnHitEffect(p.x, p.y);
-                p.active = false;
-            }
-        }
-        if (!p.active) projectiles.splice(i, 1);
+    const limit = Math.max(0, CFG.stageHalf - (VIEW.w / 2) / cam.zoom);
+    cam.x = lerp(cam.x, clamp(mid, -limit, limit), 0.1);
+
+    // focusY is the world Y that lands at the centre of the screen. Solving for
+    // it from FLOOR_ON_SCREEN keeps the floor pinned near the bottom of frame
+    // at every zoom level, instead of drifting as the camera breathes.
+    const offset = (FLOOR_ON_SCREEN - 0.5) * VIEW.h;
+    const base = CFG.groundY - offset / cam.zoom;
+    const highest = Math.min(a.y, b.y);
+    const airLift = clamp((CFG.groundY - highest) * 0.35, 0, 120);
+    cam.focusY = lerp(cam.focusY, base - airLift, 0.09);
+
+    if (cam.shake > 0) cam.shake *= 0.86;
+    if (cam.shake < 0.3) cam.shake = 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Rendering                                                          */
+/* ------------------------------------------------------------------ */
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(canvas.clientWidth * dpr);
+    canvas.height = Math.floor(canvas.clientHeight * dpr);
+}
+window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", () => setTimeout(resize, 120));
+
+function worldTransform() {
+    // Fit the 1280x720 design space into whatever the device gives us,
+    // then apply camera pan/zoom/shake on top.
+    const sx = canvas.width / VIEW.w, sy = canvas.height / VIEW.h;
+    const s = Math.max(sx, sy);
+    ctx.setTransform(s, 0, 0, s, (canvas.width - VIEW.w * s) / 2, (canvas.height - VIEW.h * s) / 2);
+    ctx.translate(VIEW.w / 2, VIEW.h / 2);
+    ctx.scale(cam.zoom, cam.zoom);
+    const sh = cam.shake;
+    ctx.translate(-cam.x + (sh ? rand(-sh, sh) : 0), -cam.focusY + (sh ? rand(-sh, sh) : 0));
+}
+
+function drawBackground() {
+    const g = ctx.createLinearGradient(0, 0, 0, CFG.groundY);
+    g.addColorStop(0, "#1a1d2b");
+    g.addColorStop(1, "#2b2135");
+    ctx.fillStyle = g;
+    ctx.fillRect(-2400, -800, 4800, CFG.groundY + 800);
+
+    // Parallax skyline
+    ctx.fillStyle = "#141621";
+    for (let i = -14; i < 14; i++) {
+        const x = i * 180 - cam.x * 0.25;
+        const h = 120 + ((i * 97) % 160);
+        ctx.fillRect(x, CFG.groundY - h, 128, h);
+    }
+    ctx.fillStyle = "rgba(255,220,140,.16)";
+    for (let i = -14; i < 14; i++) {
+        const x = i * 180 - cam.x * 0.25;
+        const h = 120 + ((i * 97) % 160);
+        for (let r = 0; r < Math.floor(h / 34); r++)
+            for (let c = 0; c < 3; c++)
+                if ((i * 7 + r * 3 + c) % 4 !== 0)
+                    ctx.fillRect(x + 16 + c * 36, CFG.groundY - h + 18 + r * 34, 18, 16);
     }
 
-    // Process Hit Effects
-    for (let i = hitEffects.length - 1; i >= 0; i--) {
-        let e = hitEffects[i];
-        e.life--;
-        if (e.life <= 0) {
-            hitEffects.splice(i, 1);
-            continue;
-        }
-        let progress = e.life / e.maxLife; // Fades from 1 to 0 over 1 second
-        
-        ctx.save();
-        ctx.globalAlpha = progress;
-        ctx.fillStyle = '#ff8800'; // Orange
+    // Floor
+    ctx.fillStyle = "#20222e";
+    ctx.fillRect(-2400, CFG.groundY, 4800, 400);
+    ctx.strokeStyle = "rgba(255,255,255,.09)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-2400, CFG.groundY); ctx.lineTo(2400, CFG.groundY);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,.05)";
+    ctx.lineWidth = 1;
+    for (let i = -20; i <= 20; i++) {
+        const x = i * 120;
         ctx.beginPath();
-        ctx.arc(e.x, e.y, 10 + (1 - progress) * 35, 0, Math.PI * 2); // Expanding circle
+        ctx.moveTo(x, CFG.groundY);
+        ctx.lineTo(x + (x - cam.x) * 0.5, CFG.groundY + 260);
+        ctx.stroke();
+    }
+    // Stage walls
+    ctx.fillStyle = "rgba(255,90,90,.12)";
+    ctx.fillRect(-CFG.stageHalf - 200, CFG.groundY - 400, 200, 400);
+    ctx.fillRect(CFG.stageHalf, CFG.groundY - 400, 200, 400);
+}
+
+function drawShadow(f) {
+    const h = clamp(1 - (CFG.groundY - f.y) / 260, 0.2, 1);
+    ctx.save();
+    ctx.fillStyle = `rgba(0,0,0,${0.34 * h})`;
+    ctx.beginPath();
+    ctx.ellipse(f.x, CFG.groundY + 3, 34 * h, 8 * h, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawFighter(f) {
+    const j = f.skel.j;
+    const S = f.S;
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    if (f.invuln) ctx.globalAlpha = 0.55 + Math.sin(Date.now() / 40) * 0.25;
+
+    const seg = (a, b, w, col) => {
+        ctx.strokeStyle = col; ctx.lineWidth = w;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    };
+
+    const back = "rgba(255,255,255,.28)";
+    const main = S.color;
+
+    // Far-side limbs first, dimmed, so the pose reads with depth.
+    seg(j.lShoulder, j.lElbow, 8, back);
+    seg(j.lElbow, j.lHand, 7, back);
+    seg(j.lHip, j.lKnee, 10, back);
+    seg(j.lKnee, j.lFoot, 9, back);
+
+    // Torso
+    seg(j.pelvis, j.chest, 13, main);
+    seg(j.chest, j.neck, 9, main);
+
+    // Head
+    ctx.fillStyle = main;
+    ctx.beginPath(); ctx.arc(j.head.x, j.head.y, SEG.head, 0, Math.PI * 2); ctx.fill();
+    // Facing marker
+    ctx.fillStyle = "#0e0f16";
+    const hx = j.head.x + f.dir * 7, hy = j.head.y - 3;
+    ctx.beginPath(); ctx.arc(hx, hy, 3.2, 0, Math.PI * 2); ctx.fill();
+
+    // Near-side limbs
+    seg(j.rShoulder, j.rElbow, 9, main);
+    seg(j.rElbow, j.rHand, 8, main);
+    seg(j.rHip, j.rKnee, 11, main);
+    seg(j.rKnee, j.rFoot, 10, main);
+
+    // Hands and feet
+    ctx.fillStyle = S.accent;
+    for (const n of ["rHand", "rFoot"]) {
+        ctx.beginPath(); ctx.arc(j[n].x, j[n].y, 5.5, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // Guard glow
+    if (f.blocking) {
+        ctx.strokeStyle = "rgba(126,200,255,.5)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(j.chest.x + f.dir * 12, j.chest.y + (f.blockLow ? 16 : 0), 34, -1.2, 1.2);
+        ctx.stroke();
+    }
+    // Armour tell
+    if (f.armor) {
+        ctx.strokeStyle = "rgba(255,180,58,.7)";
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(j.chest.x, j.chest.y, 40, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    ctx.restore();
+}
+
+function drawProjectiles() {
+    for (const p of projectiles) {
+        const t = p.t * 0.35;
+        ctx.save();
+        const grd = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, p.r * 2.2);
+        grd.addColorStop(0, "#ffffff");
+        grd.addColorStop(0.35, p.owner.S.color);
+        grd.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, p.r * (1.5 + Math.sin(t) * 0.15), p.r * (1 + Math.cos(t) * 0.12), 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
     }
+}
 
-    if (p1.hp <= 0 || p2.hp <= 0) {
-        ctx.fillStyle = 'white';
-        ctx.font = '60px Arial';
-        ctx.textAlign = 'center';
-        let winner = p1.hp > 0 ? "YOU WIN!" : "DUMMY WINS!";
-        ctx.fillText(winner, canvas.width/2, canvas.height/2 - 100);
+function drawEffects() {
+    for (const e of effects) {
+        const k = e.life / e.max;
+        ctx.save();
+        if (e.type === "spark") {
+            ctx.globalAlpha = k;
+            ctx.fillStyle = e.color;
+            const r = e.r * (1.4 - k * 0.5);
+            // Impact star
+            ctx.beginPath();
+            for (let i = 0; i < 10; i++) {
+                const a = (i / 10) * Math.PI * 2;
+                const rr = i % 2 ? r * 0.42 : r;
+                ctx[i ? "lineTo" : "moveTo"](e.x + Math.cos(a) * rr, e.y + Math.sin(a) * rr);
+            }
+            ctx.closePath(); ctx.fill();
+        } else if (e.type === "ring") {
+            ctx.globalAlpha = k;
+            ctx.strokeStyle = e.color; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(e.x, e.y, e.r * (1.8 - k), 0, Math.PI * 2); ctx.stroke();
+        } else if (e.type === "shard") {
+            ctx.globalAlpha = k;
+            ctx.fillStyle = e.color;
+            ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
+        } else if (e.type === "dust") {
+            ctx.globalAlpha = k * 0.4;
+            ctx.fillStyle = e.color + (k * 0.5).toFixed(2) + ")";
+            ctx.beginPath(); ctx.arc(e.x, e.y, e.r * (2 - k), 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
     }
 }
 
-animate();
+/* ------------------------------------------------------------------ */
+/* Match                                                              */
+/* ------------------------------------------------------------------ */
+const UI = {
+    p1health: document.getElementById("p1-health"), p2health: document.getElementById("p2-health"),
+    p1ghost: document.getElementById("p1-ghost"), p2ghost: document.getElementById("p2-ghost"),
+    p1guard: document.getElementById("p1-guard"), p2guard: document.getElementById("p2-guard"),
+    p1meter: document.getElementById("p1-meter"), p2meter: document.getElementById("p2-meter"),
+    p1meterW: document.getElementById("p1-meter-wrap"), p2meterW: document.getElementById("p2-meter-wrap"),
+    p1name: document.getElementById("p1-name"), p2name: document.getElementById("p2-name"),
+    p1style: document.getElementById("p1-style"), p2style: document.getElementById("p2-style"),
+    p1pips: document.getElementById("p1-pips"), p2pips: document.getElementById("p2-pips"),
+    timer: document.getElementById("timer"),
+    announce: document.getElementById("announce"),
+    combo1: document.getElementById("combo-p1"), combo2: document.getElementById("combo-p2")
+};
+
+function announce(text) {
+    UI.announce.textContent = text;
+    UI.announce.classList.remove("show");
+    void UI.announce.offsetWidth;   // restart the animation
+    UI.announce.classList.add("show");
+}
+
+const match = {
+    p1: null, p2: null,
+    time: CFG.roundTime, tick: 0,
+    wins: [0, 0],
+    phase: "menu",       // menu | intro | fight | ko | over
+    phaseT: 0,
+    running: false
+};
+
+function startMatch(s1, s2) {
+    match.p1 = new Fighter(s1, -180, 1, false, "p1");
+    match.p2 = new Fighter(s2, 180, -1, true, "p2");
+    match.wins = [0, 0];
+    UI.p1name.textContent = "PLAYER";
+    UI.p2name.textContent = "CPU";
+    UI.p1style.textContent = STYLES[s1].name;
+    UI.p2style.textContent = STYLES[s2].name;
+    renderPips();
+    newRound(true);
+    match.running = true;
+}
+
+function newRound(first) {
+    match.p1.reset(-180, 1);
+    match.p2.reset(180, -1);
+    effects.length = 0; projectiles.length = 0;
+    cam.x = 0; cam.zoom = 1; cam.shake = 0;
+    match.time = CFG.roundTime; match.tick = 0;
+    match.phase = "intro"; match.phaseT = 0;
+    announce(first ? "ROUND 1" : `ROUND ${match.wins[0] + match.wins[1] + 1}`);
+}
+
+function renderPips() {
+    const mk = (el, n) => {
+        el.innerHTML = "";
+        for (let i = 0; i < CFG.roundsToWin; i++) {
+            const d = document.createElement("div");
+            d.className = "pip" + (i < n ? " on" : "");
+            el.appendChild(d);
+        }
+    };
+    mk(UI.p1pips, match.wins[0]);
+    mk(UI.p2pips, match.wins[1]);
+}
+
+function updateProjectiles() {
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        p.x += p.vx; p.t++; p.life--;
+        const foe = p.owner === match.p1 ? match.p2 : match.p1;
+        if (!foe.invuln && !foe.dead) {
+            for (const hb of foe.hurtboxes()) {
+                if (distPointSeg(p.x, p.y, hb.a.x, hb.a.y, hb.b.x, hb.b.y) < p.r + hb.r) {
+                    foe.takeHit(p.owner, p.owner, {
+                        dmg: p.d.dmg, hitstun: p.d.hitstun, blockstun: 14,
+                        kb: p.d.kb * p.dir * (foe.dir === p.dir ? 1 : 1), fall: p.d.fall,
+                        level: "high", meter: 2, kbY: -3
+                    });
+                    fxHit(p.x, p.y, true);
+                    p.life = 0;
+                    break;
+                }
+            }
+        }
+        if (p.life <= 0 || Math.abs(p.x) > CFG.stageHalf + 200) projectiles.splice(i, 1);
+    }
+}
+
+function pushApart(a, b) {
+    // Fighters occupy space: nudge them apart so they never overlap.
+    const d = b.x - a.x;
+    const ad = Math.abs(d);
+    if (ad < CFG.pushRadius && ad > 0.001) {
+        const push = (CFG.pushRadius - ad) / 2;
+        const s = sign(d);
+        if (!a.grounded && b.grounded) { b.x += s * push * 2; }
+        else if (a.grounded && !b.grounded) { a.x -= s * push * 2; }
+        else { a.x -= s * push; b.x += s * push; }
+        a.x = clamp(a.x, -CFG.stageHalf, CFG.stageHalf);
+        b.x = clamp(b.x, -CFG.stageHalf, CFG.stageHalf);
+    }
+}
+
+function updateHUD() {
+    const set = (el, ghost, f) => {
+        const pct = (f.hp / f.maxHp) * 100;
+        el.style.width = pct + "%";
+        ghost.style.width = pct + "%";
+        el.style.background = pct > 30
+            ? "linear-gradient(180deg,#8dff6a,#33bb2e)"
+            : "linear-gradient(180deg,#ff8a6a,#d32e2e)";
+    };
+    set(UI.p1health, UI.p1ghost, match.p1);
+    set(UI.p2health, UI.p2ghost, match.p2);
+    UI.p1guard.style.width = match.p1.guard + "%";
+    UI.p2guard.style.width = match.p2.guard + "%";
+    UI.p1meter.style.width = match.p1.meter + "%";
+    UI.p2meter.style.width = match.p2.meter + "%";
+    UI.p1meterW.classList.toggle("full", match.p1.meter >= 100);
+    UI.p2meterW.classList.toggle("full", match.p2.meter >= 100);
+    UI.timer.textContent = String(Math.ceil(match.time)).padStart(2, "0");
+
+    const combo = (el, f) => {
+        if (f.combo >= 2 && f.comboTimer > 0) {
+            el.style.opacity = 1;
+            el.querySelector(".combo-n").textContent = f.combo;
+        } else el.style.opacity = 0;
+    };
+    combo(UI.combo1, match.p1);
+    combo(UI.combo2, match.p2);
+}
+
+function step() {
+    const { p1, p2 } = match;
+
+    if (match.phase === "intro") {
+        match.phaseT++;
+        p1.buildPose(); p2.buildPose();
+        updateCamera(p1, p2);
+        if (match.phaseT > 70) { match.phase = "fight"; announce("FIGHT!"); }
+        return;
+    }
+
+    if (match.phase === "ko") {
+        match.phaseT++;
+        // Let the knockdown play out in slow motion before resetting.
+        if (match.phaseT % 2 === 0) { p1.update(p2); p2.update(p1); }
+        updateEffects(); updateProjectiles(); updateCamera(p1, p2);
+        if (match.phaseT > 150) {
+            if (match.wins[0] >= CFG.roundsToWin || match.wins[1] >= CFG.roundsToWin) {
+                match.phase = "over"; match.phaseT = 0;
+                announce(match.wins[0] > match.wins[1] ? "YOU WIN" : "YOU LOSE");
+            } else newRound(false);
+        }
+        return;
+    }
+
+    if (match.phase === "over") {
+        match.phaseT++;
+        p1.buildPose(); p2.buildPose();
+        updateEffects(); updateCamera(p1, p2);
+        if (match.phaseT > 190) {
+            match.running = false;
+            document.getElementById("select-screen").classList.remove("hidden");
+            match.phase = "menu";
+        }
+        return;
+    }
+
+    /* ---- live round ---- */
+    p1.feedInput(P1_INPUT);
+    p1.update(p2);
+    p2.update(p1);
+    P1_INPUT.endFrame();
+    if (p2.ai) p2.ai.endFrame();
+
+    pushApart(p1, p2);
+    updateProjectiles();
+    updateEffects();
+    updateCamera(p1, p2);
+
+    match.tick++;
+    if (match.tick % FPS === 0 && match.time > 0) match.time--;
+
+    // Round end
+    const koed = p1.dead || p2.dead;
+    const timeout = match.time <= 0;
+    if (koed || timeout) {
+        let winner;
+        if (koed) winner = p1.dead ? 1 : 0;
+        else winner = p1.hp === p2.hp ? -1 : (p1.hp > p2.hp ? 0 : 1);
+        if (winner >= 0) match.wins[winner]++;
+        renderPips();
+        match.phase = "ko"; match.phaseT = 0;
+        announce(koed ? "K.O." : (winner < 0 ? "DRAW" : "TIME UP"));
+        shake(14);
+    }
+}
+
+function render() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "#0b0c10";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!match.p1) return;
+
+    worldTransform();
+    drawBackground();
+    drawShadow(match.p1); drawShadow(match.p2);
+    // Draw the further fighter first so the nearer one overlaps cleanly.
+    const order = match.p1.y <= match.p2.y ? [match.p1, match.p2] : [match.p2, match.p1];
+    drawFighter(order[0]); drawFighter(order[1]);
+    drawProjectiles();
+    drawEffects();
+}
+
+/* Fixed-timestep loop: frame data only means anything if a "frame" is a
+   constant slice of time, so the simulation never varies with refresh rate. */
+let acc = 0, last = performance.now();
+function loop(now) {
+    requestAnimationFrame(loop);
+    let delta = now - last;
+    last = now;
+    if (delta > 200) delta = 200;      // don't spiral after a tab switch
+    acc += delta;
+    let guard = 0;
+    while (acc >= DT && guard++ < 6) {
+        if (match.running) step();
+        acc -= DT;
+    }
+    if (match.running) updateHUD();
+    render();
+}
+
+/* ------------------------------------------------------------------ */
+/* Select screen                                                      */
+/* ------------------------------------------------------------------ */
+let picked = "karate";
+
+function buildSelect() {
+    const wrap = document.getElementById("style-cards");
+    wrap.innerHTML = "";
+    for (const key in STYLES) {
+        const s = STYLES[key];
+        const el = document.createElement("div");
+        el.className = "card" + (key === picked ? " sel" : "");
+        el.dataset.key = key;
+        const bar = (label, v) =>
+            `<div class="stat"><span>${label}</span><i><b style="width:${clamp(v, 5, 100)}%;background:${s.color}"></b></i></div>`;
+        el.innerHTML = `
+            <h3 style="color:${s.color}">${s.name}</h3>
+            <div class="tag">${s.tag}</div>
+            <div class="stats">
+                ${bar("PWR", (s.dmgMul || 1) * 62)}
+                ${bar("SPD", s.runSpeed * 11)}
+                ${bar("HP", (s.hp - 850) / 3.5)}
+            </div>`;
+        el.addEventListener("click", () => {
+            picked = key;
+            [...wrap.children].forEach(c => c.classList.toggle("sel", c.dataset.key === key));
+            buildMovelist();
+        });
+        wrap.appendChild(el);
+    }
+    buildMovelist();
+}
+
+function buildMovelist() {
+    const s = STYLES[picked];
+    const notation = { 2: "↓", 3: "↘", 6: "→", 1: "↙", 4: "←" };
+    let html = "";
+    for (const k in s.specials) {
+        const m = s.specials[k];
+        const motion = m.motion.map(d => notation[d] || d).join(" ");
+        // Punches live on X/Y, kicks on A/B -- name the pad buttons, not the
+        // internal LP/HP labels, so the list matches what is on screen.
+        html += `<b>${motion} + ${m.btns[0][1] === "P" ? "X / Y" : "A / B"}</b><span>${m.name}</span>`;
+    }
+    html += `<b>X&nbsp;/&nbsp;Y</b><span>Light / heavy punch</span>`;
+    html += `<b>A&nbsp;/&nbsp;B</b><span>Light / heavy kick</span>`;
+    html += `<b>→ →</b><span>Run</span>`;
+    html += `<b>← ←</b><span>Back dash</span>`;
+    html += `<b>Hold ←</b><span>Block (↙ blocks low)</span>`;
+    document.getElementById("movelist").innerHTML = html;
+}
+
+document.getElementById("start-btn").addEventListener("click", () => {
+    document.getElementById("select-screen").classList.add("hidden");
+    const keys = Object.keys(STYLES);
+    const foe = keys[Math.floor(Math.random() * keys.length)];
+    startMatch(picked, foe);
+});
+
+/* ------------------------------------------------------------------ */
+/* Boot                                                               */
+/* ------------------------------------------------------------------ */
+resize();
+initTouch();
+buildSelect();
+
+/* Force landscape presentation on portrait viewports by turning the stage a
+   quarter turn, then re-fit the canvas to its new layout size. */
+function applyOrientation() {
+    const stage = document.getElementById("stage");
+    const portrait = window.innerHeight > window.innerWidth;
+    // Only rotate on touch devices -- a narrow desktop window should just be a
+    // narrow window, not a sideways one.
+    ROTATED = portrait && (navigator.maxTouchPoints > 0 || "ontouchstart" in window);
+    stage.classList.toggle("force-landscape", ROTATED);
+
+    // Size the pad against the stage's own box, which is the viewport swapped
+    // when rotated -- so the controls stay identical however the phone is held.
+    const stageW = ROTATED ? window.innerHeight : window.innerWidth;
+    const stageH = ROTATED ? window.innerWidth : window.innerHeight;
+    stage.classList.toggle("compact", stageH <= 420 || stageW <= 540);
+    stage.classList.toggle("no-alt", stageW <= 480);
+
+    resize();
+}
+window.addEventListener("resize", applyOrientation);
+window.addEventListener("orientationchange", () => setTimeout(applyOrientation, 150));
+applyOrientation();
+
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
