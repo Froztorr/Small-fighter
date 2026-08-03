@@ -3,21 +3,44 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#12131a">
 <title>Small Fighter</title>
 <style>
-html,body{margin:0;width:100%;height:100%;background:#0b0c10;color:#fff;font-family:system-ui,sans-serif;display:grid;place-items:center} .box{max-width:560px;padding:24px;text-align:center;line-height:1.5} .err{color:#ff8a6a;white-space:pre-wrap;text-align:left}
+html,body{margin:0;width:100%;height:100%;background:#0b0c10;color:#fff;font-family:system-ui,sans-serif;display:grid;place-items:center;overflow:hidden}.box{max-width:620px;padding:24px;text-align:center;line-height:1.5}.title{font-size:28px;font-weight:800;letter-spacing:2px}.sub{opacity:.7;margin-top:8px}.err{margin-top:16px;color:#ff8a6a;white-space:pre-wrap;text-align:left;font:12px/1.45 ui-monospace,Menlo,monospace;background:#171923;padding:14px;border-radius:8px}.spin{width:34px;height:34px;border-radius:50%;border:3px solid #333;border-top-color:#ffd34a;margin:18px auto;animation:s 1s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
-<div class="box" id="loading">Loading Small Fighter movement upgrade…</div>
+<div class="box" id="loading"><div class="title">SMALL FIGHTER</div><div class="spin"></div><div class="sub">Loading movement-upgraded build…</div></div>
 <script>
 "use strict";
 
-const ORIGINAL_INDEX_URL = "https://raw.githubusercontent.com/Froztorr/Small-fighter/f49232fbc0f97fda482859122d0082992ad4a8e6/index.html";
+const ORIGINAL_SOURCES = [
+    "https://raw.githubusercontent.com/Froztorr/Small-fighter/f49232fbc0f97fda482859122d0082992ad4a8e6/index.html",
+    "https://cdn.jsdelivr.net/gh/Froztorr/Small-fighter@f49232fbc0f97fda482859122d0082992ad4a8e6/index.html",
+    "https://fastly.jsdelivr.net/gh/Froztorr/Small-fighter@f49232fbc0f97fda482859122d0082992ad4a8e6/index.html"
+];
 
 function replaceOnce(source, oldText, newText) {
-    if (!source.includes(oldText)) throw new Error("Patch anchor not found: " + oldText.slice(0, 120));
+    if (!source.includes(oldText)) throw new Error("Patch anchor not found: " + oldText.slice(0, 100));
     return source.replace(oldText, newText);
+}
+
+async function fetchOriginal() {
+    const errors = [];
+    for (const url of ORIGINAL_SOURCES) {
+        try {
+            const res = await fetch(url, { cache: "no-store" });
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            const text = await res.text();
+            if (!text.includes("class Fighter") || !text.includes("const CFG")) throw new Error("Unexpected file contents");
+            return text;
+        } catch (err) {
+            errors.push(url + " -> " + (err && err.message || err));
+        }
+    }
+    throw new Error("All original-game sources failed:\n" + errors.join("\n"));
 }
 
 function applyMovementUpgrade(html) {
@@ -232,20 +255,20 @@ function applyMovementUpgrade(html) {
             case "crouch":
                 t.crouch = 52;`);
 
+    // Show the user this is the upgraded runtime without changing gameplay UI.
+    html = html.replace("<title>Small Fighter</title>", "<title>Small Fighter - Movement Upgrade</title>");
     return html;
 }
 
 (async function bootPatchedGame() {
     try {
-        const res = await fetch(ORIGINAL_INDEX_URL, { cache: "no-store" });
-        if (!res.ok) throw new Error("Could not load original game: HTTP " + res.status);
-        const original = await res.text();
+        const original = await fetchOriginal();
         const patched = applyMovementUpgrade(original);
         document.open();
         document.write(patched);
         document.close();
     } catch (err) {
-        document.getElementById("loading").innerHTML = `<h1>Small Fighter failed to load</h1><div class="err"></div>`;
+        document.getElementById("loading").innerHTML = `<div class="title">Small Fighter failed to load</div><div class="sub">The upgraded loader could not fetch or patch the base game.</div><div class="err"></div>`;
         document.querySelector(".err").textContent = String(err && err.stack || err);
     }
 })();
