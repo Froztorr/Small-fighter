@@ -1,0 +1,194 @@
+*** Begin Patch
+*** Update File: index.html
+@@
+-            double-tap forward to run
++            double-tap forward to run &middot; X + A throws at close range
+@@
+ const CFG = {
+@@
+-    roundsToWin: 2
++    roundsToWin: 2,
++    prejumpFrames: 4,
++    landingFrames: 6,
++    throwRange: 72,
++    throwDamage: 90,
++    throwTechWindow: 8,
++    dashFrames: 10,
++    dashBackInvuln: 5,
++    walkAccel: 0.45,
++    runAccel: 0.8,
++    backAccel: 0.38
+ };
+@@
+     reset(x, dir) {
+@@
+         this.aiTimer = 0; this.aiPlan = "approach";
++        this.jumpDirX = 0;
++        this.throwTechTimer = 0;
+     }
+@@
+     startMove(m, key) {
+@@
+     }
++
++    approachVelocity(target, accel) {
++        if (this.vx < target) this.vx = Math.min(target, this.vx + accel);
++        else if (this.vx > target) this.vx = Math.max(target, this.vx - accel);
++    }
++
++    applyGroundFriction(amount = CFG.friction) {
++        if (Math.abs(this.vx) <= CFG.minSpeed) { this.vx = 0; return; }
++        this.vx -= sign(this.vx) * amount;
++    }
++
++    startJump(dirX) {
++        this.state = "prejump";
++        this.stateT = 0;
++        this.jumpDirX = dirX;
++        this.vx *= 0.55;
++    }
++
++    land() {
++        this.y = CFG.groundY;
++        this.vy = 0;
++        this.airborne = false;
++        this.state = "landing";
++        this.stateT = 0;
++        fxDust(this.x, CFG.groundY, this.dir, 4);
++    }
++
++    startDash(dir) {
++        this.state = dir > 0 ? "dashForward" : "dashBack";
++        this.stateT = 0;
++        this.vx = this.dir * dir * this.S.dashSpeed;
++        fxDust(this.x, CFG.groundY, this.dir * -dir, 6);
++    }
++
++    canSpendMeter(cost) { return this.meter >= cost; }
++
++    spendMeter(cost) {
++        if (this.meter < cost) return false;
++        this.meter -= cost;
++        return true;
++    }
++
++    wantsThrow(inp) { return inp.pressed.LP && (inp.btn.LK || inp.pressed.LK); }
++
++    tryThrow(opp) {
++        if (Math.abs(opp.x - this.x) > CFG.throwRange) return false;
++        if (!this.grounded || !opp.grounded) return false;
++        if (["launched", "down", "wakeup"].includes(opp.state)) return false;
++        if (opp.throwTechTimer > 0) {
++            this.vx = -this.dir * 4;
++            opp.vx = this.dir * 4;
++            fxBlock((this.x + opp.x) / 2, this.skel.j.chest.y);
++            announce("TECH!");
++            return true;
++        }
++        opp.hp = Math.max(0, opp.hp - CFG.throwDamage);
++        opp.vx = this.dir * 9;
++        opp.vy = -7;
++        opp.y -= 1;
++        opp.state = "launched";
++        opp.airborne = true;
++        opp.fall = CFG.fallKO;
++        this.meter = Math.min(100, this.meter + 6);
++        shake(8);
++        fxHit(opp.skel.j.chest.x, opp.skel.j.chest.y, true);
++        return true;
++    }
+@@
+     update(opp) {
+@@
+         if (this.dashTap.timer > 0) this.dashTap.timer--;
++        if (this.throwTechTimer > 0) this.throwTechTimer--;
+@@
+-            case "idle": case "walk": case "run": case "crouch": case "block":
++            case "idle": case "walk": case "run": case "crouch": case "block":
+                 this.neutral(inp, opp); break;
++            case "prejump":
++                this.vx *= 0.65;
++                if (++this.stateT >= CFG.prejumpFrames) this.jump(this.jumpDirX);
++                break;
++            case "landing":
++                this.applyGroundFriction(CFG.friction * 1.35);
++                if (++this.stateT >= CFG.landingFrames) this.state = "idle";
++                break;
++            case "dashForward":
++                if (++this.stateT >= CFG.dashFrames) this.state = "brake";
++                break;
++            case "dashBack":
++                this.invuln = this.stateT < CFG.dashBackInvuln;
++                if (++this.stateT >= CFG.dashFrames) this.state = "brake";
++                break;
+@@
+         // ---- specials take priority ----
++        if (this.wantsThrow(inp)) { this.throwTechTimer = CFG.throwTechWindow; if (this.tryThrow(opp)) return; }
+         const sp = this.findSpecial(inp);
+@@
+-        if (np >= 7) { this.jump(np === 8 ? 0 : (np === 9 ? this.dir : -this.dir)); return; }
++        if (np >= 7) { this.startJump(np === 8 ? 0 : (np === 9 ? this.dir : -this.dir)); return; }
+@@
+-            this.vx = -this.dir * this.S.dashSpeed;
+-            this.state = "brake"; this.stateT = 0;
+-            fxDust(this.x, CFG.groundY, -this.dir, 6);
++            this.startDash(-1);
+             return;
+         }
+@@
+-            this.vx = this.dir * this.S.runSpeed;
++            this.approachVelocity(this.dir * this.S.runSpeed, CFG.runAccel);
+             return;
+         }
+@@
+-        if (fwd) { this.vx = this.dir * this.S.walkSpeed; this.state = "walk"; }
+-        else if (back) { this.vx = -this.dir * this.S.backSpeed; this.state = "walk"; }
+-        else { this.vx *= 0.5; this.state = this.blocking ? "block" : "idle"; }
++        if (fwd) { this.approachVelocity(this.dir * this.S.walkSpeed, CFG.walkAccel); this.state = "walk"; }
++        else if (back) { this.approachVelocity(-this.dir * this.S.backSpeed, CFG.backAccel); this.state = "walk"; }
++        else { this.applyGroundFriction(CFG.friction); this.state = this.blocking ? "block" : "idle"; }
+@@
+         if (this.grounded) {
+-            this.state = "idle";
+-            this.airborne = false;
+-            fxDust(this.x, CFG.groundY, this.dir, 4);
++            this.land();
+         }
+@@
+-            if (this.airborne && this.state === "air") { this.state = "idle"; this.airborne = false; }
++            if (this.airborne && this.state === "air") this.land();
+             this.airborne = false;
+@@
+-                    this.vx -= sign(this.vx) * CFG.friction;
+-                    if (Math.abs(this.vx) < CFG.minSpeed) this.vx = 0;
++                    this.applyGroundFriction(CFG.friction);
+@@
+-        const stride = this.state === "run" ? this.S.runStride : this.S.stride;
+-        if (this.grounded && (this.state === "walk" || this.state === "run")) {
++        const stride = (this.state === "run" || this.state === "dashForward") ? this.S.runStride : this.S.stride;
++        if (this.grounded && ["walk", "run", "dashForward", "dashBack"].includes(this.state)) {
+@@
+-            case "walk": case "run": {
++            case "walk": case "run": case "dashForward": case "dashBack": {
+                 useLegIK = true;
+-                const run = this.state === "run";
++                const run = this.state === "run" || this.state === "dashForward" || this.state === "dashBack";
+                 const spd = Math.abs(this.vx);
+                 const fwd = this.vx * this.dir > 0;
+@@
+                 blend = 0.42;
+                 break;
+             }
++            case "prejump":
++                t.crouch = 42; t.lean = 10; t.head = -8;
++                t.lHip = 18; t.lKn = -68; t.rHip = -12; t.rKn = -62;
++                t.lSh = 28; t.lEl = 104; t.rSh = 16; t.rEl = 118;
++                blend = 0.5;
++                break;
++            case "landing":
++                t.crouch = 36; t.lean = 10; t.head = -8;
++                t.lHip = 20; t.lKn = -70; t.rHip = -12; t.rKn = -62;
++                t.lSh = 32; t.lEl = 104; t.rSh = 18; t.rEl = 116;
++                blend = 0.55;
++                break;
+*** End Patch
