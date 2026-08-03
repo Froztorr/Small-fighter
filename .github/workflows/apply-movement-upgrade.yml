@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'patches/movement-upgrade.patch'
+      - 'patches/.apply-trigger'
       - '.github/workflows/apply-movement-upgrade.yml'
   workflow_dispatch:
 
